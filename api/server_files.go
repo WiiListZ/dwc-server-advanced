@@ -63,6 +63,20 @@ func serverFolder() (string, error) {
 	return os.Getwd()
 }
 
+// The file manager is for server data. Keep the running server binary out of
+// its listing when the binary happens to live in the data folder.
+func isRunningServerBinary(folder, rel, name, executable string) bool {
+	if executable == "" {
+		return false
+	}
+	entry := filepath.Clean(filepath.Join(folder, rel, name))
+	executable = filepath.Clean(executable)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(entry, executable)
+	}
+	return entry == executable
+}
+
 // cleanServerPath turns a slash path from the panel into a path relative to
 // the server folder. "" and "/" are the folder itself.
 func cleanServerPath(p string) (string, bool) {
@@ -220,7 +234,11 @@ func HandlePanelServerFiles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		entries := make([]serverFileEntry, 0, len(items))
+		executable, _ := os.Executable()
 		for _, item := range items {
+			if isRunningServerBinary(dir, rel, item.Name(), executable) {
+				continue
+			}
 			info, err := item.Info()
 			if err != nil {
 				continue
