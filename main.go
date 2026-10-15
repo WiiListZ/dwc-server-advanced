@@ -50,6 +50,14 @@ func main() {
 
 	args := chdirToDataDir(os.Args[1:])
 	launchArgs = args
+	if len(args) > 0 && args[0] == "--generate-https" {
+		if err := nas.GenerateHTTPSCertificates(common.GetConfig()); err != nil {
+			fmt.Fprintln(os.Stderr, "HTTPS certificate generation incomplete:", err)
+			os.Exit(1)
+		}
+		fmt.Println("HTTPS certificate files are ready.")
+		return
+	}
 
 	if len(args) == 0 || args[0] != "backend" {
 		runFirstSetupIfNeeded()

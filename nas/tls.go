@@ -20,6 +20,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/logrusorgru/aurora/v3"
@@ -37,54 +38,66 @@ var (
 	serverCertsRecordWii []byte
 	rsaKeyDS             *rsa.PrivateKey
 	serverCertsRecordDS  []byte
-	realTLSConfig        *tls.Config
+	realTLSConfig        atomic.Pointer[tls.Config]
 )
 
-func setupTLS(config common.Config) {
+// setupTLS enables each usable HTTPS mode independently. A missing certificate
+// must not terminate the HTTP server and web panel.
+func setupTLS(config common.Config) bool {
 	privKeyPath := config.KeyPath
 	certsPath := config.CertPath
-	exploitWii := *config.EnableHTTPSExploitWii
-	exploitDS := *config.EnableHTTPSExploitDS
+	exploitWii := config.EnableHTTPSExploitWii != nil && *config.EnableHTTPSExploitWii
+	exploitDS := config.EnableHTTPSExploitDS != nil && *config.EnableHTTPSExploitDS
+	_ = GenerateHTTPSCertificates(config)
 
-	setupRealTLS(privKeyPath, certsPath)
-	// Reread the private key and certs on a regular interval
-	go func() {
-		for {
-			time.Sleep(24 * time.Hour)
-			setupRealTLS(privKeyPath, certsPath)
-		}
-	}()
+	ready := setupRealTLS(privKeyPath, certsPath)
+	if ready {
+		// Reread the normal certificate without interrupting active clients.
+		go func() {
+			for {
+				time.Sleep(24 * time.Hour)
+				setupRealTLS(privKeyPath, certsPath)
+			}
+		}()
+	}
 
 	// Handle requests from Wii, DS and regular TLS
-
 	if exploitWii {
-		setupExploitWii(config)
+		if err := setupExploitWii(config); err != nil {
+			logging.Error("NAS-TLS", "Wii HTTPS exploit unavailable:", err)
+		} else {
+			ready = true
+		}
 	}
-
 	if exploitDS {
-		setupExploitDS(config)
+		if err := setupExploitDS(config); err != nil {
+			logging.Error("NAS-TLS", "DS HTTPS exploit unavailable:", err)
+		} else {
+			ready = true
+		}
 	}
+	return ready
 }
 
-func setupRealTLS(privKeyPath string, certsPath string) {
+func setupRealTLS(privKeyPath string, certsPath string) bool {
 	// Read server key and certs
 
 	serverKey, err := os.ReadFile(privKeyPath)
 	if err != nil {
 		logging.Error("NAS-TLS", "Failed to read server key:", err)
-		return
+		return false
 	}
 
 	serverCerts, err := os.ReadFile(certsPath)
 	if err != nil {
 		logging.Error("NAS-TLS", "Failed to read server certs:", err)
-		return
+		return false
 	}
 
 	cert, err := tls.X509KeyPair(serverCerts, serverKey)
 	if err != nil {
 		logging.Error("NAS-TLS", "Failed to parse server certs:", err)
-		return
+		return false
 	}
 
 	config := tls.Config{
@@ -99,35 +112,39 @@ func setupRealTLS(privKeyPath string, certsPath string) {
 		},
 	}
 
-	realTLSConfig = &config
+	realTLSConfig.Store(&config)
+	return true
 }
 
-func setupExploitWii(config common.Config) {
+func setupExploitWii(config common.Config) error {
 	certDataWii, err := os.ReadFile(config.CertPathWii)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("read Wii certificate %q: %w", config.CertPathWii, err)
 	}
 
 	certsWii, err := parseCertificateChain(certDataWii)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("parse Wii certificate %q: %w", config.CertPathWii, err)
 	}
 
 	rsaDataWii, err := os.ReadFile(config.KeyPathWii)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("read Wii key %q: %w", config.KeyPathWii, err)
 	}
 
 	rsaBlockWii, _ := pem.Decode(rsaDataWii)
+	if rsaBlockWii == nil {
+		return fmt.Errorf("decode Wii key %q: invalid PEM", config.KeyPathWii)
+	}
 	parsedKeyWii, err := x509.ParsePKCS8PrivateKey(rsaBlockWii.Bytes)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("parse Wii key %q: %w", config.KeyPathWii, err)
 	}
 
 	var ok bool
 	rsaKeyWii, ok = parsedKeyWii.(*rsa.PrivateKey)
 	if !ok {
-		panic("unexpected key type")
+		return fmt.Errorf("Wii key %q is not RSA", config.KeyPathWii)
 	}
 
 	serverCertsRecordWii = []byte{0x16, 0x03, 0x01}
@@ -170,6 +187,7 @@ func setupExploitWii(config common.Config) {
 	serverCertsRecordWii = append(serverCertsRecordWii, []byte{
 		0x16, 0x03, 0x01, 0x00, 0x04, 0x0E, 0x00, 0x00, 0x00,
 	}...)
+	return nil
 }
 
 func parseCertificateChain(certData []byte) ([][]byte, error) {
@@ -199,32 +217,41 @@ func parseCertificateChain(certData []byte) ([][]byte, error) {
 	return certs, nil
 }
 
-func setupExploitDS(config common.Config) {
+func setupExploitDS(config common.Config) error {
 	certDS, err := os.ReadFile(config.CertPathDS)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("read DS certificate %q: %w", config.CertPathDS, err)
+	}
+	if _, err := x509.ParseCertificate(certDS); err != nil {
+		return fmt.Errorf("parse DS certificate %q: %w", config.CertPathDS, err)
 	}
 
 	rsaDataDS, err := os.ReadFile(config.KeyPathDS)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("read DS key %q: %w", config.KeyPathDS, err)
 	}
 
 	rsaBlockDS, _ := pem.Decode(rsaDataDS)
+	if rsaBlockDS == nil {
+		return fmt.Errorf("decode DS key %q: invalid PEM", config.KeyPathDS)
+	}
 	parsedKeyDS, err := x509.ParsePKCS8PrivateKey(rsaBlockDS.Bytes)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("parse DS key %q: %w", config.KeyPathDS, err)
 	}
 
 	var ok bool
 	rsaKeyDS, ok = parsedKeyDS.(*rsa.PrivateKey)
 	if !ok {
-		panic("unexpected key type")
+		return fmt.Errorf("DS key %q is not RSA", config.KeyPathDS)
 	}
 
 	wiiCertDS, err := os.ReadFile(config.WiiCertPathDS)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("read DS intermediate certificate %q: %w", config.WiiCertPathDS, err)
+	}
+	if _, err := x509.ParseCertificate(wiiCertDS); err != nil {
+		return fmt.Errorf("parse DS intermediate certificate %q: %w", config.WiiCertPathDS, err)
 	}
 
 	serverCertsRecordDS = []byte{0x16, 0x03, 0x00}
@@ -270,6 +297,7 @@ func setupExploitDS(config common.Config) {
 	serverCertsRecordDS = append(serverCertsRecordDS, []byte{
 		0x16, 0x03, 0x00, 0x00, 0x04, 0x0E, 0x00, 0x00, 0x00,
 	}...)
+	return nil
 }
 
 type tlsConnection struct {
@@ -392,11 +420,12 @@ func (c *tlsConnection) handleTLSHandshake() (err error) {
 
 // handleRealTLSHandshake handles the TLS request handshake legitimately using crypto/tls, and creates tlsConn
 func (c *tlsConnection) handleRealTLSHandshake(rawConn net.Conn) error {
-	if realTLSConfig == nil {
+	config := realTLSConfig.Load()
+	if config == nil {
 		return errors.New("realTLSConfig is not set")
 	}
 
-	tlsConn := tls.Server(rawConn, realTLSConfig)
+	tlsConn := tls.Server(rawConn, config)
 
 	err := tlsConn.Handshake()
 	if err != nil {

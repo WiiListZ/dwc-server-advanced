@@ -106,7 +106,10 @@ func listenAndServeTLS() {
 	logging.Notice("NAS", "Starting HTTPS server on", aurora.BrightCyan(tlsServer.Addr))
 
 	l, err := net.Listen("tcp", tlsServer.Addr)
-	common.ShouldNotError(err)
+	if err != nil {
+		logging.Error("NAS-TLS", "Cannot start HTTPS listener:", err)
+		return
+	}
 	listener := &tlsListener{Listener: l}
 
 	defer func() {
@@ -115,7 +118,7 @@ func listenAndServeTLS() {
 
 	err = tlsServer.Serve(listener)
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		panic(err)
+		logging.Error("NAS-TLS", "HTTPS listener stopped:", err)
 	}
 }
 

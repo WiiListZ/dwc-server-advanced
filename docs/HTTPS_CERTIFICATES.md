@@ -1,8 +1,12 @@
 # HTTPS Certificates
 
+With `enableHttps: true`, dwc-server-advanced creates the missing normal HTTPS certificate and key on startup. When `enableHttpsExploitWii` or `enableHttpsExploitDS` is true, it also creates the corresponding legacy chain from Dolphin's `clientca.pem` and `clientcakey.pem` if they are available. The files are written to the paths in `config.yml` without replacing existing files. Run `dwc-server-advanced --dir <server-folder> --generate-https` to create them before starting the server, or use **Create HTTPS certificates** in the patcher GUI. Set `DWC_DOLPHIN_WII_DIR` if Dolphin's `Wii` folder is in a custom location. The normal certificate is self-signed and intended for local testing; use a trusted certificate for a public site. If a file is missing or invalid, HTTPS reports an error while HTTP and the web panel remain available.
+
+The commands below provide a manual alternative and explain each certificate set.
+
 For the full payload setup sequence, including client mode selection, payload generation, file copying, and endpoint checks, see `docs/PAYLOADS.md`.
 
-The server uses two different certificate/key sets:
+The server uses separate certificate/key sets for normal HTTPS, Wii and DS:
 
 ```text
 fullchain.pem / privkey.pem
@@ -10,6 +14,9 @@ fullchain.pem / privkey.pem
 
 naswii-chain.der / naswii-signed-key.pem
   Used by the custom Wii TLS exploit path when enableHttpsExploitWii is true.
+
+nas-cert.der / nwc.der / nas-key.pem
+  Used by the custom DS TLS exploit path when enableHttpsExploitDS is true.
 ```
 
 `payload/private-key.pem` is separate. It signs payload binaries and must come from the same patcher build as the payload files.
@@ -136,7 +143,7 @@ For clients connecting to Nintendo WFC hostnames, routing still matters. The gam
 
 `open privkey.pem: The system cannot find the file specified` means `certPath` or `keyPath` points to a missing file.
 
-`panic: open naswii-cert.der: The system cannot find the file specified` means `enableHttpsExploitWii` is true but `certDerPathWii` is missing.
+`Wii HTTPS exploit unavailable` means its configured certificate set is missing or invalid. The server logs the error and keeps the HTTP web panel available. Install matching files, then restart.
 
 `tls: client offered only unsupported versions: [302 301]` means the server was built without legacy TLS support. Rebuild from current source.
 

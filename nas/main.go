@@ -45,10 +45,6 @@ func StartServer(reload bool) {
 	address := *config.NASAddress + ":" + config.NASPort
 	payloadServerAddress = config.PayloadServerAddress
 
-	if config.EnableHTTPS {
-		go setupTLS(config)
-	}
-
 	err := CacheProfanityFile()
 	if err != nil {
 		logging.Info("NAS", err)
@@ -102,8 +98,11 @@ func StartServer(reload bool) {
 		}
 
 		go func() {
-			setupTLS(config)
-			listenAndServeTLS()
+			if setupTLS(config) {
+				listenAndServeTLS()
+			} else {
+				logging.Error("NAS-TLS", "HTTPS is unavailable; HTTP and the web panel remain available. Add the configured certificate files and restart the server.")
+			}
 		}()
 	}
 }
