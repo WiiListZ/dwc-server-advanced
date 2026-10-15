@@ -1,0 +1,630 @@
+package gpcm
+
+import (
+	"crypto/md5"
+	"crypto/sha1"
+	"dwc-server-advanced/common"
+	"dwc-server-advanced/database"
+	"dwc-server-advanced/logging"
+	"dwc-server-advanced/qr2"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"math/rand"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/logrusorgru/aurora/v3"
+)
+
+const (
+	UnitCodeDS       = 0
+	UnitCodeWii      = 1
+	UnitCodeDSAndWii = 0xff
+)
+
+type MinimumPayloadVersion struct {
+	major byte
+	minor int
+}
+
+var MinimumPayloadVersions = []MinimumPayloadVersion{
+	{
+		major: 0,
+		minor: 1,
+	},
+}
+
+func generateResponse(gpcmChallenge, nasChallenge, authToken, clientChallenge string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(nasChallenge))
+	str := hex.EncodeToString(hasher.Sum(nil))
+	str += strings.Repeat(" ", 48)
+	str += authToken
+	str += clientChallenge
+	str += gpcmChallenge
+	str += hex.EncodeToString(hasher.Sum(nil))
+
+	_hasher := md5.New()
+	_hasher.Write([]byte(str))
+	return hex.EncodeToString(_hasher.Sum(nil))
+}
+
+func generateProof(gpcmChallenge, nasChallenge, authToken, clientChallenge string) string {
+	return generateResponse(clientChallenge, nasChallenge, authToken, gpcmChallenge)
+}
+
+var msPublicKey = []byte{
+	0x00, 0xFD, 0x56, 0x04, 0x18, 0x2C, 0xF1, 0x75, 0x09, 0x21, 0x00, 0xC3, 0x08, 0xAE, 0x48, 0x39,
+	0x91, 0x1B, 0x6F, 0x9F, 0xA1, 0xD5, 0x3A, 0x95, 0xAF, 0x08, 0x33, 0x49, 0x47, 0x2B, 0x00, 0x01,
+	0x71, 0x31, 0x69, 0xB5, 0x91, 0xFF, 0xD3, 0x0C, 0xBF, 0x73, 0xDA, 0x76, 0x64, 0xBA, 0x8D, 0x0D,
+	0xF9, 0x5B, 0x4D, 0x11, 0x04, 0x44, 0x64, 0x35, 0xC0, 0xED, 0xA4, 0x2F,
+}
+
+var commonDeviceIds = []uint32{
+	0x02000001, // Internal use
+	0x0403ac68, // Dolphin default
+
+	// Publicly shared key dumps
+	0x02023f0a,
+	0x0204cef9, // From RR
+	0x038c864b,
+	0x040e3f97,
+	0x0411bbe5,
+	0x04cb7515,
+	0x066deb49,
+	0x06bcc32d,
+	0x06d0437a,
+	0x0812f46b,
+	0x089120c8,
+	0x0a305428, // From RR
+	0x0a447b97, // From RR
+	0x0a1e97cf, // From RR
+	0x0e19d5ed,
+	0x0e31482b,
+	0x2428a8cb,
+	0x247dd10b,
+}
+
+func verifySignature(moduleName string, authToken string, signature string) (defaultKey bool, result uint32) {
+	result = 0
+	defaultKey = false
+
+	sigBytes, err := common.Base64DwcEncoding.DecodeString(signature)
+	if err != nil || (len(sigBytes) != 0x144 && len(sigBytes) != 0x148) {
+		return
+	}
+
+	ngId := sigBytes[0x000:0x004]
+
+	if !allowDefaultDolphinKeys {
+		// Skip authentication signature verification for common device IDs (the caller should handle this)
+		for _, defaultDeviceId := range commonDeviceIds {
+			if binary.BigEndian.Uint32(ngId) == defaultDeviceId {
+				if !allowDefaultDolphinKeys {
+					logging.Warn(moduleName, "Using default NG device ID")
+				}
+				result = defaultDeviceId
+				defaultKey = true
+				return
+			}
+		}
+	}
+
+	ngTimestamp := sigBytes[0x004:0x008]
+	caId := sigBytes[0x008:0x00C]
+	msId := sigBytes[0x00C:0x010]
+	apId := sigBytes[0x010:0x018]
+	msSignature := sigBytes[0x018:0x054]
+	ngPublicKey := sigBytes[0x054:0x090]
+	ngSignature := sigBytes[0x090:0x0CC]
+	apPublicKey := sigBytes[0x0CC:0x108]
+	apSignature := sigBytes[0x108:0x144]
+	apTimestamp := []byte{0, 0, 0, 0}
+	if len(sigBytes) == 0x148 {
+		apTimestamp = sigBytes[0x144:0x148]
+	}
+
+	ngIssuer := fmt.Sprintf("Root-CA%02x%02x%02x%02x-MS%02x%02x%02x%02x", caId[0], caId[1], caId[2], caId[3], msId[0], msId[1], msId[2], msId[3])
+	ngName := fmt.Sprintf("NG%02x%02x%02x%02x", ngId[0], ngId[1], ngId[2], ngId[3])
+
+	ngCertBlob := []byte(ngIssuer)
+	ngCertBlob = append(ngCertBlob, make([]byte, 0x40-len(ngIssuer))...)
+	ngCertBlob = append(ngCertBlob, 0x00, 0x00, 0x00, 0x02)
+	ngCertBlob = append(ngCertBlob, []byte(ngName)...)
+	ngCertBlob = append(ngCertBlob, make([]byte, 0x40-len(ngName))...)
+	ngCertBlob = append(ngCertBlob, ngTimestamp...)
+	ngCertBlob = append(ngCertBlob, ngPublicKey...)
+	ngCertBlob = append(ngCertBlob, make([]byte, 0x3C)...)
+	ngCertBlobHash := sha1.Sum(ngCertBlob)
+
+	if !verifyECDSA(msPublicKey, msSignature, ngCertBlobHash[:]) {
+		logging.Error(moduleName, "NG cert verify failed")
+		return
+	}
+	logging.Info(moduleName, "NG cert verified")
+
+	apIssuer := ngIssuer + "-" + ngName
+	apName := fmt.Sprintf("AP%02x%02x%02x%02x%02x%02x%02x%02x", apId[0], apId[1], apId[2], apId[3], apId[4], apId[5], apId[6], apId[7])
+
+	apCertBlob := []byte(apIssuer)
+	apCertBlob = append(apCertBlob, make([]byte, 0x40-len(apIssuer))...)
+	apCertBlob = append(apCertBlob, 0x00, 0x00, 0x00, 0x02)
+	apCertBlob = append(apCertBlob, []byte(apName)...)
+	apCertBlob = append(apCertBlob, make([]byte, 0x40-len(apName))...)
+	apCertBlob = append(apCertBlob, apTimestamp...)
+	apCertBlob = append(apCertBlob, apPublicKey...)
+	apCertBlob = append(apCertBlob, make([]byte, 0x3C)...)
+	apCertBlobHash := sha1.Sum(apCertBlob)
+
+	if !verifyECDSA(ngPublicKey, ngSignature, apCertBlobHash[:]) {
+		logging.Error(moduleName, "AP cert verify failed")
+		return
+	}
+	logging.Info(moduleName, "AP cert verified")
+
+	authTokenHash := sha1.Sum([]byte(authToken))
+	if !verifyECDSA(apPublicKey, apSignature, authTokenHash[:]) {
+		logging.Error(moduleName, "Auth token signature failed")
+		return
+	}
+	logging.Notice(moduleName, "Auth token signature verified; NG ID:", aurora.Cyan(fmt.Sprintf("%08x", ngId)))
+
+	result = binary.BigEndian.Uint32(ngId)
+	return
+}
+
+func (g *GameSpySession) login(command common.GameSpyCommand) {
+	if g.LoggedIn {
+		logging.Error(g.ModuleName, "Attempt to login twice")
+		g.replyError(ErrLogin)
+		return
+	}
+
+	authToken := command.OtherValues["authtoken"]
+	if authToken == "" {
+		g.replyError(ErrLogin)
+		return
+	}
+
+	authTokenObj := common.NASAuthToken{}
+	err := authTokenObj.Unmarshal(authToken)
+	if err != nil {
+		logging.Error(g.ModuleName, "Failed to unmarshal auth token:", err)
+		if err == common.ErrTokenExpired {
+			g.replyError(ErrLoginLoginTicketExpired)
+			return
+		}
+		g.replyError(ErrLogin)
+		return
+	}
+
+	g.GameName = command.OtherValues["gamename"]
+	logging.Info(g.ModuleName, "Game name:", aurora.Cyan(g.GameName))
+	g.GameCode = common.NullTerminatedString(authTokenObj.GameCode[:])
+	g.Region = authTokenObj.Region
+	g.Language = authTokenObj.Lang
+	g.ConsoleFriendCode = authTokenObj.ConsoleFriendCode
+	g.UnitCode = authTokenObj.UnitCode
+
+	var endianness binary.ByteOrder = binary.LittleEndian
+	if g.UnitCode == UnitCodeWii {
+		endianness = binary.BigEndian
+	}
+
+	g.InGameName = common.UTF16Decode(authTokenObj.InGameScreenName[:], endianness)
+
+	_, payloadVerExists := command.OtherValues["wl:ver"]
+	_, signatureExists := command.OtherValues["wl:sig"]
+	deviceId := uint32(0)
+
+	if hostPlatform, exists := command.OtherValues["wl:host"]; exists {
+		g.HostPlatform = hostPlatform
+	} else {
+		if g.UnitCode == UnitCodeDS {
+			g.HostPlatform = "DS"
+		} else {
+			g.HostPlatform = "Wii"
+		}
+	}
+
+	g.LoginInfoSet = true
+
+	if wwfcMsg, blocked := GetDisabledGameMessage(g.GameName); blocked {
+		logging.Error(g.ModuleName, "Login rejected, game disabled:", aurora.Cyan(g.GameName))
+		g.replyError(GPError{
+			ErrorCode:   ErrLogin.ErrorCode,
+			ErrorString: wwfcMsg.MessageRMC[LangEnglish],
+			Fatal:       true,
+			WWFCMessage: wwfcMsg,
+		})
+		return
+	}
+
+	logging.Event(
+		"received_login_info",
+		map[string]any{
+			"user_id":      authTokenObj.UserID,
+			"game_name":    g.GameName,
+			"wii_number":   g.ConsoleFriendCode,
+			"in_game_name": g.InGameName,
+			"unit_code":    g.UnitCode,
+			"ip_address":   g.RemoteAddr,
+		},
+	)
+
+	expectedUnitCode := common.GetExpectedUnitCode(g.GameName)
+	if (g.UnitCode != UnitCodeDS && g.UnitCode != UnitCodeWii) || (g.UnitCode != expectedUnitCode && expectedUnitCode != UnitCodeDSAndWii) {
+		logging.Error(g.ModuleName, "Incorrect unit code specified:", aurora.Cyan(g.UnitCode))
+		g.replyError(ErrLogin)
+		return
+	}
+
+	deviceAuth := false
+	defaultKey := false
+	switch g.UnitCode {
+	case UnitCodeDS:
+		g.NeedsExploit = common.DoesGameNeedExploit(g.GameName)
+		deviceAuth = true
+
+	case UnitCodeWii:
+		if !payloadVerExists && !signatureExists {
+			if common.GetConfig().AllowNoSSLCheatClients {
+				logging.Warn(g.ModuleName, "Allowing Wii client without payload authentication due to allowNoSSLCheatClients")
+				g.NeedsExploit = false
+				deviceAuth = true
+				break
+			}
+
+			// Players using the DNS, need patching using a QR2 exploit
+			if !common.DoesGameNeedExploit(g.GameName) {
+				logging.Error(g.ModuleName, "Using DNS for incompatible game:", aurora.Cyan(g.GameName))
+				g.replyError(GPError{
+					ErrorCode:   ErrLogin.ErrorCode,
+					ErrorString: fmt.Sprintf("The client is not patched to use %s.", wwfcServiceName()),
+					Fatal:       true,
+				})
+				return
+			}
+
+			g.NeedsExploit = true
+			deviceAuth = false
+		} else {
+			defaultKey, deviceId = g.verifyExLoginInfo(command, authToken)
+			if deviceId == 0 {
+				return
+			}
+			deviceAuth = true
+		}
+
+	default:
+		logging.Error(g.ModuleName, "Invalid unit code specified:", aurora.Cyan(g.UnitCode))
+		g.replyError(ErrLogin)
+		return
+	}
+
+	nasChallenge := common.NullTerminatedString(authTokenObj.Challenge[:])
+
+	response := generateResponse(g.Challenge, nasChallenge, authToken, command.OtherValues["challenge"])
+	if response != command.OtherValues["response"] {
+		g.replyError(ErrLogin)
+		return
+	}
+
+	proof := generateProof(g.Challenge, nasChallenge, command.OtherValues["authtoken"], command.OtherValues["challenge"])
+
+	cmdProfileId := uint32(0)
+	if cmdProfileIdStr, exists := command.OtherValues["profileid"]; exists {
+		cmdProfileId2, err := strconv.ParseUint(cmdProfileIdStr, 10, 32)
+		if err != nil {
+			g.replyError(GPError{
+				ErrorCode:   ErrLogin.ErrorCode,
+				ErrorString: "The provided profile ID is invalid.",
+				Fatal:       true,
+				WWFCMessage: WWFCMsgUnknownLoginError,
+			})
+			return
+		}
+
+		cmdProfileId = uint32(cmdProfileId2)
+	}
+
+	if !g.performLoginWithDatabase(authTokenObj.UserID, common.NullTerminatedString(authTokenObj.GsbrCode[:]), cmdProfileId, defaultKey, deviceId, deviceAuth) {
+		return
+	}
+
+	if g.User.Created {
+		logging.Event(
+			"profile_created",
+			map[string]any{
+				"user_id":    g.User.UserId,
+				"profile_id": g.User.ProfileId,
+				"game_name":  g.GameName,
+				"ip_address": g.RemoteAddr,
+			},
+		)
+
+	}
+
+	g.ModuleName = "GPCM:" + strconv.FormatInt(int64(g.User.ProfileId), 10) + "*"
+	g.ModuleName += "/" + common.CalcFriendCodeString(g.User.ProfileId, g.User.GsbrCode[:4]) + "*"
+
+	// Check to see if a session is already open with this profile ID
+	mutex.Lock()
+	otherSession, exists := sessions[g.User.ProfileId]
+	if exists {
+		otherSession.replyError(ErrForcedDisconnect)
+
+		for i := 0; ; i++ {
+			mutex.Unlock()
+			time.Sleep(300 * time.Millisecond)
+			mutex.Lock()
+
+			if _, exists = sessions[g.User.ProfileId]; !exists {
+				break
+			}
+
+			// Give up after 6 seconds
+			if i >= 20 {
+				mutex.Unlock()
+				logging.Error(g.ModuleName, "Failed to disconnect other session")
+				g.replyError(ErrForcedDisconnect)
+				return
+			}
+		}
+	}
+	sessions[g.User.ProfileId] = g
+	mutex.Unlock()
+
+	g.AuthToken = authToken
+	g.LoginTicket = common.GPCMLoginTicket{ProfileID: g.User.ProfileId}.Marshal()
+	g.SessionKey = rand.Int31n(290000000) + 10000000
+
+	g.DeviceAuthenticated = deviceAuth
+	g.LoggedIn = true
+
+	g.ModuleName = "GPCM:" + strconv.FormatInt(int64(g.User.ProfileId), 10)
+	g.ModuleName += "/" + common.CalcFriendCodeString(g.User.ProfileId, g.User.GsbrCode[:4])
+
+	// Notify QR2 of the login
+	qr2.Login(g.User.ProfileId, g.GameCode, g.InGameName, g.ConsoleFriendCode, g.User.GsbrCode[:4], g.RemoteAddr, g.NeedsExploit, g.DeviceAuthenticated, g.PayloadFeatures, g.User.Restricted, g.User.OpenHost, g.User.OpenHostMode, g.User.OpenHostList)
+
+	replyUserId := g.User.UserId
+	if g.UnitCode == UnitCodeDS {
+		// Workaround for SDK bug
+		replyUserId = 0
+	}
+
+	otherValues := map[string]string{
+		"sesskey":    strconv.FormatInt(int64(g.SessionKey), 10),
+		"proof":      proof,
+		"userid":     strconv.FormatUint(replyUserId, 10),
+		"profileid":  strconv.FormatUint(uint64(g.User.ProfileId), 10),
+		"uniquenick": g.User.UniqueNick,
+		"lt":         g.LoginTicket,
+		"id":         command.OtherValues["id"],
+	}
+
+	if g.GameName == "mariokartwii" {
+		if !g.PayloadFeatures {
+			if pending, err := db.HasPendingLoginMessage(g.User.ProfileId); err != nil {
+				logging.Error(g.ModuleName, "Failed to check pending login message:", err)
+			} else if pending {
+				logging.Warn(g.ModuleName, "Targeted login message is pending, but this client has no payload features")
+			}
+		} else if profileMotd, exists, err := GetProfileMessageOfTheDay(g.User.ProfileId); err != nil {
+			logging.Error(g.ModuleName, "Failed to read pending login message:", err)
+		} else if exists {
+			otherValues["wl:motd"] = EncodeMessageOfTheDay(profileMotd)
+		}
+	}
+
+	payload := common.CreateGameSpyMessage(common.GameSpyCommand{
+		Command:      "lc",
+		CommandValue: "2",
+		OtherValues:  otherValues,
+	})
+
+	if err := common.SendPacket(ServerName, g.ConnIndex, []byte(payload)); err != nil {
+		logging.Error("GPCM", "Failed to send login response packet")
+		panic(err)
+	}
+
+	logging.Event(
+		"logged_in",
+		map[string]any{
+			"profile_id":   g.User.ProfileId,
+			"game_name":    g.GameName,
+			"in_game_name": g.InGameName,
+			"ip_address":   g.RemoteAddr,
+		},
+	)
+}
+
+func (g *GameSpySession) exLogin(command common.GameSpyCommand) {
+	if !g.LoggedIn {
+		logging.Warn(g.ModuleName, "Ignoring exlogin before login")
+		return
+	}
+
+	defaultKey, deviceId := g.verifyExLoginInfo(command, g.AuthToken)
+	if deviceId == 0 {
+		return
+	}
+
+	if !g.performLoginWithDatabase(g.User.UserId, g.User.GsbrCode, 0, defaultKey, deviceId, true) {
+		return
+	}
+
+	g.DeviceAuthenticated = true
+	qr2.SetDeviceAuthenticated(g.User.ProfileId)
+
+	if targetInfo, delivered, err := DeliverPendingLoginMessage(g.User.ProfileId); err != nil {
+		logging.Error(g.ModuleName, "Failed to deliver pending login message after payload authentication:", err)
+	} else if delivered {
+		logging.Info(g.ModuleName, "Delivered pending login message after payload authentication")
+	} else if targetInfo.Online && !targetInfo.PayloadFeatures {
+		logging.Warn(g.ModuleName, "Pending login message cannot be delivered because payload features are unavailable")
+	}
+}
+
+func checkPayloadVersion(payloadVer string) bool {
+	verInt, err := strconv.ParseInt(payloadVer, 0, 32)
+	if err != nil {
+		return false
+	}
+
+	major := byte(verInt>>24) & 255
+	minor := int(verInt>>12) & 4095
+	// beta := verInt & 4095
+
+	for _, v := range MinimumPayloadVersions {
+		if v.major == major && minor >= v.minor {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *GameSpySession) verifyExLoginInfo(command common.GameSpyCommand, authToken string) (defaultKey bool, deviceId uint32) {
+	payloadVer, payloadVerExists := command.OtherValues["wl:ver"]
+	signature, signatureExists := command.OtherValues["wl:sig"]
+	defaultKey = false
+	deviceId = 0
+
+	if !payloadVerExists || !checkPayloadVersion(payloadVer) {
+		g.replyError(GPError{
+			ErrorCode:   ErrLogin.ErrorCode,
+			ErrorString: "The payload version is invalid.",
+			Fatal:       true,
+			WWFCMessage: WWFCMsgPayloadInvalid,
+		})
+		return
+	}
+
+	if !signatureExists {
+		g.replyError(GPError{
+			ErrorCode:   ErrLogin.ErrorCode,
+			ErrorString: "Missing authentication signature.",
+			Fatal:       true,
+			WWFCMessage: WWFCMsgUnknownLoginError,
+		})
+		return
+	}
+
+	defaultKey, deviceId = verifySignature(g.ModuleName, authToken, signature)
+	if deviceId == 0 {
+		g.replyError(GPError{
+			ErrorCode:   ErrLogin.ErrorCode,
+			ErrorString: "The authentication signature is invalid.",
+			Fatal:       true,
+			WWFCMessage: WWFCMsgUnknownLoginError,
+		})
+		return
+	}
+
+	g.DeviceId = deviceId
+	g.PayloadFeatures = true
+	qr2.SetPayloadFeatures(g.User.ProfileId)
+	logging.Event(
+		"device_authenticated",
+		map[string]any{
+			"profile_id":      g.User.ProfileId,
+			"ng_device_id":    g.DeviceId,
+			"payload_version": payloadVer,
+		},
+	)
+	return
+}
+
+func (g *GameSpySession) performLoginWithDatabase(userId uint64, gsbrCode string, profileId uint32, defaultKey bool, deviceId uint32, deviceAuth bool) bool {
+	// Get IP address without port
+	ipAddress := g.RemoteAddr
+	if strings.Contains(ipAddress, ":") {
+		ipAddress = ipAddress[:strings.Index(ipAddress, ":")]
+	}
+
+	user, err := db.LoginUserToGPCM(userId, gsbrCode, profileId, defaultKey, deviceId, ipAddress, g.InGameName, deviceAuth, g.ConsoleFriendCode, g.HostPlatform)
+	g.User = user
+
+	if err != nil {
+		logging.Error(g.ModuleName, "DB error:", err)
+
+		switch err {
+		case database.ErrProfileIDInUse:
+			g.replyError(GPError{
+				ErrorCode:   ErrLogin.ErrorCode,
+				ErrorString: "The profile ID is already in use.",
+				Fatal:       true,
+				WWFCMessage: WWFCMsgProfileIDInUse,
+			})
+		case database.ErrReservedProfileIDRange:
+			g.replyError(GPError{
+				ErrorCode:   ErrLogin.ErrorCode,
+				ErrorString: "The profile ID is in a reserved range.",
+				Fatal:       true,
+				WWFCMessage: WWFCMsgProfileIDInvalid,
+			})
+		case database.ErrDeviceIDMismatch:
+			if strings.HasPrefix(g.HostPlatform, "Dolphin") {
+				g.replyError(GPError{
+					ErrorCode:   ErrLogin.ErrorCode,
+					ErrorString: "The device ID does not match the one on record.",
+					Fatal:       true,
+					WWFCMessage: WWFCMsgConsoleMismatchDolphin,
+				})
+			} else {
+				g.replyError(GPError{
+					ErrorCode:   ErrLogin.ErrorCode,
+					ErrorString: "The device ID does not match the one on record.",
+					Fatal:       true,
+					WWFCMessage: WWFCMsgConsoleMismatch,
+				})
+			}
+		case database.ErrProhibitedDeviceID:
+			if strings.HasPrefix(g.HostPlatform, "Dolphin") {
+				g.replyError(GPError{
+					ErrorCode:   ErrLogin.ErrorCode,
+					ErrorString: "Prohibited device ID used in signature.",
+					Fatal:       true,
+					WWFCMessage: WWFCMsgDolphinSetupRequired,
+				})
+			} else {
+				g.replyError(GPError{
+					ErrorCode:   ErrLogin.ErrorCode,
+					ErrorString: "Prohibited device ID used in signature.",
+					Fatal:       true,
+					WWFCMessage: WWFCMsgUnknownLoginError,
+				})
+			}
+		case database.ErrProfileBannedTOS:
+			g.replyError(GPError{
+				ErrorCode:   ErrLogin.ErrorCode,
+				ErrorString: "The profile is banned from the service. Reason: " + user.BanReason,
+				Fatal:       true,
+				WWFCMessage: WWFCMsgProfileBannedTOS,
+				Reason:      user.BanReason,
+			})
+		default:
+			g.replyError(GPError{
+				ErrorCode:   ErrLogin.ErrorCode,
+				ErrorString: "There was an error logging in to the GP backend.",
+				Fatal:       true,
+				WWFCMessage: WWFCMsgUnknownLoginError,
+			})
+		}
+
+		return false
+	}
+
+	return true
+}
+
+func IsLoggedIn(profileID uint32) bool {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	session, exists := sessions[profileID]
+	return exists && session.LoggedIn
+}

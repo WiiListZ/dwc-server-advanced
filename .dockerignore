@@ -1,0 +1,15 @@
+.git
+web/node_modules
+**/*.exe
+**/*.exe~
+config.yml
+config.yaml
+config.xml
+*.pem
+*.der
+*.csr
+.env
+logs
+state
+payload
+data

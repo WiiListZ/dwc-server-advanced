@@ -1,0 +1,22 @@
+# systemd unit for dwc-server-advanced. scripts/install-linux.sh installs it.
+#
+# The binary lives in /opt/dwc-server-advanced, owned by the service user, so
+# the built-in updater can replace it. After an update the server exits with
+# code 75 and systemd starts the new version.
+[Unit]
+Description=DWC Server Advanced (Nintendo Wi-Fi Connection replacement)
+After=network-online.target postgresql.service docker.service
+Wants=network-online.target
+
+[Service]
+User=dwc
+Group=dwc
+ExecStart=/opt/dwc-server-advanced/dwc-server-advanced --dir /var/lib/dwc-server-advanced
+Restart=always
+RestartSec=2
+# Ports 80 and 443 without running as root.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+# Local configuration files
+.env
+config.xml
+config.yml
+config.yaml
+profanity.txt
+*.der
+*.pem
+*.csr
+*.srl
+
+# Local scripts
+*.sh
+*.bat
+
+# Logs
+logs
+
+# Payload data
+payload
+
+# Reload state
+state
+
+# Executables
+*.exe
+*.exe~
+
+# Editor files
+.vscode
+
+# Docker data directory
+data/
+
+# Installer and helper scripts that are part of the project
+!scripts/*.sh
+
+# Local files that never belong in the repository
+local_cheat_code.txt
+disabled_games.json
+disabled_games.json.imported
+/game_list.tsv
+*.log
+
+# Database created by the setup wizard (credentials in postgres/.env)
+/postgres/
+/dwc-home.txt

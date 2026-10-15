@@ -1,0 +1,124 @@
+# The address the GameSpy services will bind to.
+gsAddress: 127.0.0.1
+
+# The address the NAS HTTP server will bind to.
+nasAddress: 127.0.0.1
+nasPort: 80
+
+# The address the NAS HTTPS proxy server will bind to.
+nasAddressHttps: 127.0.0.1
+nasPortHttps: 443
+enableHttps: false
+
+# The address the payload server will be located at.
+# Leave blank to use the deprecated integrated server.
+payloadServerAddress: 127.0.0.1:29997
+
+# Public service name shown on the web panel and login messages.
+serverName: WFC Server
+
+# Local RPC channels for internal server communication.
+# Do not expose these to a public network or the internet.
+frontendAddress: 127.0.0.1:29998
+frontendBackendAddress: 127.0.0.1:29999
+backendAddress: 127.0.0.1:29999
+backendFrontendAddress: 127.0.0.1:29998
+
+# Certificate and key used for modern web browser requests.
+certPath: fullchain.pem
+keyPath: privkey.pem
+
+# SSL/TLS exploit configuration.
+enableHttpsExploitWii: false
+enableHttpsExploitDS: false
+
+# Certificate and key used for the Wii DNS exploit.
+certDerPathWii: naswii-cert.der
+keyPathWii: naswii-key.pem
+
+# Certificate, Wii client certificate and key used for the DS DNS exploit.
+certDerPathDS: nas-cert.der
+wiiCertDerPathDS: nwc.der
+keyPathDS: nas-key.pem
+
+# Client policy.
+allowDefaultDolphinKeys: true
+allowNoSSLCheatClients: false
+
+# Database credentials.
+username: username
+password: password
+
+# Database information.
+databaseAddress: 127.0.0.1
+databaseName: wwfc
+
+# Unbanning.
+# keepRevokedBans:
+#   true (default): a lifted ban stays in the history and shows as "Revoked".
+#   false: a lifted ban is deleted from the database.
+keepRevokedBans: true
+
+# Days that ended bans, revoked bans and kicks stay visible in the ban lists
+# of the public page and the moderation panel.
+banHistoryDays: 30
+
+# Automatic updates from GitHub releases. The owner sees new versions in the
+# moderation panel and can install them now (short restart) or schedule them.
+updates:
+  enabled: true
+  repository: WiiListZ/dwc-server-advanced
+  checkIntervalMinutes: 60
+
+# Public site profiles at /u/<username>: avatar, bio, game status and stats.
+# Set to false to turn the whole profile system off.
+profiles:
+  enabled: true
+
+# Logging configuration.
+# logLevel:
+#   0: No messages are logged.
+#   1: General messages are logged.
+#   2: General and error messages are logged.
+#   3: General, error, and warning messages are logged.
+#   4: General, error, warning, and informational messages are logged.
+logLevel: 4
+
+# logOutput:
+#   None: Messages are discarded.
+#   StdOut: Messages are written to standard output.
+#   StdOutAndFile: Messages are written to both standard output and a file.
+logOutput: StdOutAndFile
+
+# Used for API authentication. Share only with trusted administrators.
+apiSecret: change-me-to-a-long-random-secret
+
+eventReporting:
+  logToDatabase: true
+  discord:
+    webhooks:
+      - enabled: false
+        url: https://discord.com/api/webhooks/...
+        author: wfc-server event reporting
+        eventTypes:
+          # - all
+          - backend_started
+          - backend_stopped
+          - profile_created
+          - logged_in
+          - logged_out
+          - received_login_info
+          - device_authenticated
+          - reported_bad_packet
+          - reported_stall
+          - gpcm_returned_error
+          - group_created
+          - group_deleted
+          - group_joined
+          - group_left
+          - group_host_changed
+          - natneg_succeeded
+          - natneg_failed
+          - profile_kicked
+          - profile_banned
+          - profile_unbanned

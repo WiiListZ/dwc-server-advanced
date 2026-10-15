@@ -1,0 +1,283 @@
+package gamestats
+
+import (
+	"dwc-server-advanced/common"
+	"dwc-server-advanced/database"
+	"dwc-server-advanced/gpcm"
+	"dwc-server-advanced/logging"
+	"encoding/gob"
+	"os"
+	"strings"
+
+	"github.com/linkdata/deadlock"
+	"github.com/logrusorgru/aurora/v3"
+)
+
+var ServerName = "gamestats"
+
+type GameStatsSession struct {
+	ConnIndex  uint64
+	RemoteAddr string
+	ModuleName string
+	Challenge  string
+
+	SessionKey int32
+	GameName   string
+	gameInfo   *common.GameInfo
+
+	Authenticated bool
+	LoginID       int
+	User          database.User
+
+	ReadBuffer  []byte
+	WriteBuffer []byte
+}
+
+var (
+	db database.Connection
+
+	serverName string
+	webSalt    string
+
+	sessionsByConnIndex = make(map[uint64]*GameStatsSession)
+	mutex               = deadlock.RWMutex{}
+)
+
+func StartServer(reload bool) {
+	// Get config
+	config := common.GetConfig()
+
+	serverName = config.ServerName
+	webSalt = common.RandomString(32)
+
+	common.ReadGameList()
+
+	// Start SQL
+	db = database.Start(config)
+
+	if reload {
+		// Load state
+		file, err := os.Open("state/gstats_sessions.gob")
+		if err != nil {
+			panic(err)
+		}
+		defer func() {
+			common.ShouldNotError(file.Close())
+		}()
+
+		decoder := gob.NewDecoder(file)
+		common.ShouldNotError(decoder.Decode(&sessionsByConnIndex))
+
+		for _, session := range sessionsByConnIndex {
+			session.gameInfo = common.GetGameInfoByName(session.GameName)
+			if session.gameInfo == nil {
+				logging.Error(session.ModuleName, "Unknown game from reload:", aurora.Cyan(session.GameName))
+				// Force close the session now to prevent a panic later
+				_ = common.CloseConnection(ServerName, session.ConnIndex)
+				delete(sessionsByConnIndex, session.ConnIndex)
+			}
+		}
+
+		logging.Notice("GSTATS", "Loaded", aurora.Cyan(len(sessionsByConnIndex)), "sessions")
+	}
+}
+
+func Shutdown() {
+	// Save state
+	file, err := os.OpenFile("state/gstats_sessions.gob", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	common.ShouldNotError(err)
+	defer func() {
+		common.ShouldNotError(file.Close())
+	}()
+	defer db.Close()
+
+	encoder := gob.NewEncoder(file)
+	common.ShouldNotError(encoder.Encode(sessionsByConnIndex))
+
+	logging.Notice("GSTATS", "Saved", aurora.Cyan(len(sessionsByConnIndex)), "sessions")
+}
+
+func NewConnection(index uint64, address string) {
+	session := &GameStatsSession{
+		ConnIndex:  index,
+		RemoteAddr: address,
+		ModuleName: "GSTATS:" + address,
+		Challenge:  common.RandomString(10),
+
+		SessionKey: 0,
+		gameInfo:   nil,
+
+		Authenticated: false,
+		LoginID:       0,
+		User:          database.User{},
+
+		ReadBuffer:  []byte{},
+		WriteBuffer: []byte{},
+	}
+
+	session.Write(common.GameSpyCommand{
+		Command:      "lc",
+		CommandValue: "1",
+		OtherValues: map[string]string{
+			"challenge": session.Challenge,
+			"id":        "1",
+		},
+	})
+	err := common.SendPacket(ServerName, index, []byte(session.WriteBuffer))
+	if err != nil {
+		logging.Error(session.ModuleName, "Failed to send initial packet:", err)
+	}
+	session.WriteBuffer = []byte{}
+
+	logging.Notice(session.ModuleName, "Connection established from", address)
+
+	mutex.Lock()
+	sessionsByConnIndex[index] = session
+	mutex.Unlock()
+}
+
+func CloseConnection(index uint64) {
+	mutex.RLock()
+	session := sessionsByConnIndex[index]
+	mutex.RUnlock()
+
+	if session == nil {
+		logging.Error("GSTATS", "Cannot find session for this connection index:", aurora.Cyan(index))
+		return
+	}
+
+	logging.Notice(session.ModuleName, "Connection closed")
+
+	mutex.Lock()
+	delete(sessionsByConnIndex, index)
+	mutex.Unlock()
+}
+
+func HandlePacket(index uint64, data []byte) {
+	mutex.RLock()
+	session := sessionsByConnIndex[index]
+	mutex.RUnlock()
+
+	if session == nil {
+		logging.Error("GSTATS", "Cannot find session for this connection index:", aurora.Cyan(index))
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Error(session.ModuleName, "Panic:", r)
+		}
+	}()
+
+	// Enforce maximum buffer size
+	length := len(session.ReadBuffer) + len(data)
+	if length > 0x4000 {
+		logging.Error(session.ModuleName, "Buffer overflow")
+		return
+	}
+
+	session.ReadBuffer = append(session.ReadBuffer, data...)
+
+	// Packets can be received in fragments, so make sure we're at the end of a packet
+	if string(session.ReadBuffer[max(0, length-7):length]) != `\final\` {
+		return
+	}
+
+	// Decrypt the data, can decrypt multiple packets
+	decrypted := strings.Builder{}
+	decrypted.Grow(length)
+	p := 0
+	for i := 0; i < length; i++ {
+		if string(session.ReadBuffer[i:i+7]) == `\final\` {
+			decrypted.WriteString(`\final\`)
+
+			i += 6
+			p = 0
+			continue
+		}
+
+		decrypted.WriteRune(rune(session.ReadBuffer[i] ^ "GameSpy3D"[p]))
+		p = (p + 1) % 9
+	}
+
+	message := decrypted.String()
+	session.ReadBuffer = []byte{}
+
+	commands, err := common.ParseGameStatsMessage(message)
+	if err != nil {
+		logging.Error(session.ModuleName, "Error parsing message:", err.Error())
+		logging.Error(session.ModuleName, "Raw data:", message)
+		session.replyError(gpcm.ErrParse)
+		return
+	}
+
+	commands = session.handleCommand("ka", commands, func(command common.GameSpyCommand) {
+		session.Write(common.GameSpyCommand{
+			Command: "ka",
+		})
+	})
+
+	commands = session.handleCommand("auth", commands, session.auth)
+	commands = session.handleCommand("authp", commands, session.authp)
+
+	if len(commands) != 0 && !session.Authenticated {
+		logging.Error(session.ModuleName, "Attempt to run command before authentication:", aurora.Cyan(commands[0]))
+		session.replyError(gpcm.ErrNotLoggedIn)
+		return
+	}
+
+	commands = session.handleCommand("getpd", commands, session.getpd)
+	commands = session.handleCommand("setpd", commands, session.setpd)
+	common.MaybeUnused(session.ignoreCommand)
+
+	for _, command := range commands {
+		logging.Error(session.ModuleName, "Unknown command:", aurora.Cyan(command))
+	}
+
+	if len(session.WriteBuffer) > 0 {
+		err := common.SendPacket(ServerName, session.ConnIndex, session.WriteBuffer)
+		if err != nil {
+			logging.Error(session.ModuleName, "Failed to send packet:", err)
+		} else {
+			session.WriteBuffer = []byte{}
+		}
+	}
+}
+
+func (g *GameStatsSession) handleCommand(name string, commands []common.GameSpyCommand, handler func(command common.GameSpyCommand)) []common.GameSpyCommand {
+	var unhandled []common.GameSpyCommand
+
+	for _, command := range commands {
+		if command.Command != name {
+			unhandled = append(unhandled, command)
+			continue
+		}
+
+		logging.Info(g.ModuleName, "Command:", aurora.Yellow(command.Command))
+		handler(command)
+	}
+
+	return unhandled
+}
+
+func (g *GameStatsSession) ignoreCommand(name string, commands []common.GameSpyCommand) []common.GameSpyCommand {
+	var unhandled []common.GameSpyCommand
+
+	for _, command := range commands {
+		if command.Command != name {
+			unhandled = append(unhandled, command)
+		}
+	}
+
+	return unhandled
+}
+
+func (g *GameStatsSession) Write(command common.GameSpyCommand) {
+	// Encrypt the data and append it to be sent
+	payload := []byte(common.CreateGameSpyMessage(command))
+	// Exclude trailing \final\
+	for i := 0; i < len(payload)-7; i++ {
+		payload[i] ^= "GameSpy3D"[i%9]
+	}
+	g.WriteBuffer = append(g.WriteBuffer, payload...)
+}

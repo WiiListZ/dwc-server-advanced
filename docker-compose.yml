@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: wwfc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${WWFC_POSTGRES_DB:-wwfc}
+      POSTGRES_USER: ${WWFC_POSTGRES_USER:-wwfc_user}
+      POSTGRES_PASSWORD: ${WWFC_POSTGRES_PASSWORD:-wwfc_password}
+    ports:
+      - "${WWFC_POSTGRES_BIND:-127.0.0.1}:5432:5432"
+    volumes:
+      - wwfc-postgres-data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # The server itself. Start it with: docker compose --profile server up -d
+  # On the first start open the link printed by `docker compose logs server`
+  # and use "postgres" as the database host in the setup wizard.
+  server:
+    profiles: ["server"]
+    build: .
+    image: ghcr.io/wiilistz/dwc-server-advanced:latest
+    container_name: dwc-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "28910:28910"
+      - "29900:29900"
+      - "29901:29901"
+      - "29920:29920"
+      - "27900:27900/udp"
+      - "27901:27901/udp"
+    volumes:
+      - ./data:/data
+
+volumes:
+  wwfc-postgres-data:
