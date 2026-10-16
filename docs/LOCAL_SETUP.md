@@ -197,6 +197,22 @@ Resolve-DnsName mariokartwii.available.gs.nintendowifi.net
 
 They should resolve to `127.0.0.1`.
 
+### Generated Gecko patch and payload features
+
+The generated Gecko code for domain `localhost` redirects the game to `nas.localhost` and `gs.localhost`. Windows may not resolve these subdomains automatically. Add these names to the same `hosts` file before enabling the code:
+
+```text
+127.0.0.1 nas.localhost naswii.localhost gs.localhost
+127.0.0.1 gpcm.gs.localhost gpsp.gs.localhost gamestats.gs.localhost gamestats2.gs.localhost
+127.0.0.1 mariokartwii.available.gs.localhost mariokartwii.master.gs.localhost mariokartwii.ms19.gs.localhost
+127.0.0.1 mariokartwii.gamestats.gs.localhost mariokartwii.gamestats2.gs.localhost mariokartwii.sake.gs.localhost
+127.0.0.1 mariokartwii.natneg1.gs.localhost mariokartwii.natneg2.gs.localhost mariokartwii.natneg3.gs.localhost
+```
+
+Run `ipconfig /flushdns` and confirm `Resolve-DnsName nas.localhost` and `Resolve-DnsName gs.localhost` return `127.0.0.1`. For the PAL disc build, add the current patcher's `patch/build/RMCPD00.txt` as an enabled Gecko code in Dolphin. `RMCPN0001.txt` targets a different game version; do not enable both. Leave NoSSL disabled. Copy the same patcher build's `dist/` to the server's `payload/` and copy `dist/stage1.bin` again as `payload/stage1v1.bin`: the Gecko code downloads `/w1`. Verify `http://nas.localhost/w1` returns HTTP 200 before starting the game.
+
+Once the game connects, **Live** in the web panel should mark the player **Payload**. This is the check for payload-only features such as the custom messages and the Mario Kart Wii race-end action.
+
 ## 6. Build and Run
 
 Run PowerShell as Administrator if you bind to ports `80` and `443`:

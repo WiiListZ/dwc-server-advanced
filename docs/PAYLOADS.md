@@ -104,7 +104,7 @@ server folder/
   payload/
     private-key.pem
     stage1.bin
-    stage1v1.bin              optional, only needed if the client requests /w1
+    stage1v1.bin              needed by the generated Gecko patch (/w1)
     sbcm/
       payload.RMCE.bin
       payload.RMCJ.bin
@@ -138,6 +138,7 @@ File rules:
 - Never put `payload.RMCPD00.bin` in `payload/sbcm`.
 - Never put `payload.RMCP.bin` in `payload/binary`.
 - Copy all payload files from the same `dwc-server-advanced-patcher` build.
+- The generated Gecko patch requests `/w1`, so copy `dist/stage1.bin` to `payload/stage1v1.bin` too. `/w0` alone returning HTTP 200 does not verify the Gecko path.
 
 The server has a guard for the most common mistake: if a stage 2 file is placed in `payload/sbcm`, the log says it expected the SBCM exploit from `dwc-server-advanced-patcher --exploit`.
 
@@ -423,14 +424,9 @@ New-Item -ItemType Directory -Force `
 
 Copy-Item "$Patcher\dist\private-key.pem" "$Server\payload\private-key.pem" -Force
 Copy-Item "$Patcher\dist\stage1.bin" "$Server\payload\stage1.bin" -Force
+Copy-Item "$Patcher\dist\stage1.bin" "$Server\payload\stage1v1.bin" -Force
 Copy-Item "$Patcher\dist\binary\*.bin" "$Server\payload\binary\" -Force
 Copy-Item "$Patcher\exploit\sbcm\payload.*.bin" "$Server\payload\sbcm\" -Force
-```
-
-Optional, only if you built or need `/w1`:
-
-```powershell
-Copy-Item "$Patcher\dist\stage1.bin" "$Server\payload\stage1v1.bin" -Force
 ```
 
 Validate the required Mario Kart Wii files:
@@ -439,6 +435,7 @@ Validate the required Mario Kart Wii files:
 $Required = @(
   "payload\private-key.pem",
   "payload\stage1.bin",
+  "payload\stage1v1.bin",
   "payload\sbcm\payload.RMCE.bin",
   "payload\sbcm\payload.RMCJ.bin",
   "payload\sbcm\payload.RMCK.bin",
@@ -541,7 +538,7 @@ Stage 1:
 $r = Invoke-WebRequest `
   -UseBasicParsing `
   -Headers @{Host="naswii.nintendowifi.net"} `
-  -Uri "http://127.0.0.1/w0"
+  -Uri "http://127.0.0.1/w1"
 
 "HTTP $($r.StatusCode) length=$($r.RawContentLength)"
 ```
@@ -552,7 +549,7 @@ Expected:
 HTTP 200 length=3550
 ```
 
-The exact length can change if `stage1.bin` changes. It should be `2 + stage1.bin size`.
+The exact length can change if `stage1.bin` changes. It should be `2 + stage1v1.bin size`. Test `/w0` as well if you use the SBCM injection path.
 
 Final payload:
 
