@@ -407,6 +407,9 @@ func (g *GameSpySession) login(command common.GameSpyCommand) {
 	}
 
 	if g.GameName == "mariokartwii" {
+		// The payload reads this from lc\2 before exlogin marks PayloadFeatures.
+		// Unpatched clients ignore the extra GameSpy field.
+		otherValues["wl:motd"] = EncodeMessageOfTheDay("Welcome to\n" + common.GetConfig().ServerName + "!")
 		if !g.PayloadFeatures {
 			if pending, err := db.HasPendingLoginMessage(g.User.ProfileId); err != nil {
 				logging.Error(g.ModuleName, "Failed to check pending login message:", err)

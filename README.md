@@ -251,7 +251,7 @@ The server looks for `$WWFC_CONFIG`, then `config.yml`, `config.yaml` and finall
 
 | Key | Purpose |
 |---|---|
-| `serverName` | Name shown on the website and in login messages |
+| `serverName` | Name shown on the website and in Mario Kart Wii's payload welcome message |
 | `gsAddress` | Bind address of the GameSpy services |
 | `nasAddress`, `nasPort` | Bind address and port of NAS HTTP and the website |
 | `nasAddressHttps`, `nasPortHttps`, `enableHttps` | HTTPS listener |
@@ -402,6 +402,8 @@ Consoles and emulators only reach this server once their games are patched. The 
 
 The fork adds a feature this server uses: **End race** in the panel sends a QR2 command that patched Mario Kart Wii clients obey, ending the race without breaking up the room (see [Ending a race](#ending-a-race)).
 
+For Mario Kart Wii clients with the payload, the default welcome popup uses `serverName` from `config.yml`. Change the name in **Panel → Server → Settings → General** and restart the server to update the popup.
+
 **Build** (Python 3.11+ with `cryptography`, devkitPPC, and your server's domain):
 
 ```sh
@@ -416,6 +418,7 @@ cd dwc-server-advanced-patcher
 SERVER_DATA=/var/lib/dwc-server-advanced      # ./data with Docker
 mkdir -p "$SERVER_DATA/payload/sbcm"
 cp -r dist/. "$SERVER_DATA/payload/"
+cp dist/stage1.bin "$SERVER_DATA/payload/stage1v1.bin"  # Gecko codes request /w1
 cp exploit/sbcm/*.bin "$SERVER_DATA/payload/sbcm/"
 ```
 
@@ -423,6 +426,7 @@ cp exploit/sbcm/*.bin "$SERVER_DATA/payload/sbcm/"
 payload/
   private-key.pem              from the same build as binary/, or clients reject the payload
   stage1.bin
+  stage1v1.bin
   binary/payload.<game>.bin
   sbcm/payload.RMC*.bin
 ```
