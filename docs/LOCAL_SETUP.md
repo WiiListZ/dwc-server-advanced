@@ -211,6 +211,8 @@ The generated Gecko code for domain `localhost` redirects the game to `nas.local
 
 Run `ipconfig /flushdns` and confirm `Resolve-DnsName nas.localhost` and `Resolve-DnsName gs.localhost` return `127.0.0.1`. For the PAL disc build, add the current patcher's `patch/build/RMCPD00.txt` as an enabled Gecko code in Dolphin. `RMCPN0001.txt` targets a different game version; do not enable both. Leave NoSSL disabled. Copy the same patcher build's `dist/` to the server's `payload/` and copy `dist/stage1.bin` again as `payload/stage1v1.bin`: the Gecko code downloads `/w1`. Verify `http://nas.localhost/w1` returns HTTP 200 before starting the game.
 
+The code and stage 1 must actually have been built for `localhost`. If an older build still contains `nas.nintendowifi.com/w1`, the `.localhost` hosts entries cannot help: rebuild with domain `localhost`, reinstall the complete `dist/` output and replace the old Gecko code in Dolphin. The patcher GUI displays the domain embedded in the selected Gecko code.
+
 Check name resolution with `Resolve-DnsName` or `ping`, not only `curl`: on some Windows installations curl can reach a `.localhost` URL while the operating-system resolver still reports an unknown host. The game needs the operating-system mapping.
 
 Once the game connects, **Live** in the web panel should mark the player **Payload**. This is the check for payload-only features such as the custom messages and the Mario Kart Wii race-end action.

@@ -127,6 +127,7 @@ func RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/api/panel/game-list", HandlePanelGameList)
 	mux.HandleFunc("/api/panel/update", HandlePanelUpdate)
 	mux.HandleFunc("/api/panel/server-settings", HandlePanelServerSettings)
+	mux.HandleFunc("/api/panel/https-certificates", HandlePanelHTTPSCertificates)
 	mux.HandleFunc("/api/panel/server-restart", HandlePanelServerRestart)
 	mux.HandleFunc("/api/panel/server-console", HandlePanelServerConsole)
 	mux.HandleFunc("/api/panel/docs", HandlePanelDocs)

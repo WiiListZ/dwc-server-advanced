@@ -58,6 +58,7 @@ func main() {
 		fmt.Println("HTTPS certificate files are ready.")
 		return
 	}
+	api.SetHTTPSCertificateGenerator(nas.GenerateHTTPSCertificates)
 
 	if len(args) == 0 || args[0] != "backend" {
 		runFirstSetupIfNeeded()

@@ -1,4 +1,4 @@
-import { BookOpen, CalendarClock, CircleAlert, Download, ExternalLink, HardDrive, RefreshCw, RotateCcw, Save, Settings2, SquareTerminal, X } from "lucide-react"
+import { BookOpen, CalendarClock, CircleAlert, Download, ExternalLink, HardDrive, KeyRound, RefreshCw, RotateCcw, Save, Settings2, SquareTerminal, X } from "lucide-react"
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -308,6 +308,7 @@ export function ServerSection() {
   const [busy, setBusy] = useState(false)
   const [needsRestart, setNeedsRestart] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  const [certGenerating, setCertGenerating] = useState(false)
 
   useEffect(() => {
     api<{ settings: ServerSettings; path: string }>("/api/panel/server-settings")
@@ -347,6 +348,19 @@ export function ServerSection() {
       waitForRestart(`${status.current}#restart`, () => window.location.reload())
     } catch (error) {
       toast.error(errorMessage(error))
+    }
+  }
+
+  async function generateCertificates() {
+    setCertGenerating(true)
+    try {
+      await api("/api/panel/https-certificates", { method: "POST", body: {} })
+      setNeedsRestart(true)
+      toast.success("HTTPS certificate files are ready", { description: "Restart the server to load newly created files." })
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setCertGenerating(false)
     }
   }
 
@@ -417,6 +431,17 @@ export function ServerSection() {
                           <p className="text-sm text-muted-foreground">{t.description}</p>
                         </div>
                         <SettingsFields section={t.id} value={draft} onChange={setDraft} />
+                        {t.id === "https" && (
+                          <div className="grid gap-2 rounded-lg border p-4">
+                            <div className="font-medium">Certificate files</div>
+                            <p className="text-sm text-muted-foreground">Generate missing HTTPS certificates from the saved settings. Existing certificates and keys are preserved. Restart the server afterwards.</p>
+                            <Button type="button" variant="outline" className="w-fit" onClick={() => void generateCertificates()} disabled={certGenerating || busy || dirty || !draft.enableHttps}>
+                              {certGenerating ? <Spinner /> : <KeyRound data-icon="inline-start" />} {certGenerating ? "Generating…" : "Generate certificate files"}
+                            </Button>
+                            {dirty && <p className="text-sm text-muted-foreground">Save the settings before generating certificates.</p>}
+                            {!draft.enableHttps && <p className="text-sm text-muted-foreground">Enable HTTPS to generate certificates.</p>}
+                          </div>
+                        )}
                       </FieldGroup>
                     </TabsContent>
                   ))}

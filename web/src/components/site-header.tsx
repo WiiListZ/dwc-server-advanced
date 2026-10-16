@@ -104,7 +104,7 @@ export function SiteHeader({
         <a href="/" className="sm:hidden" aria-label="Home">
           <BrandMark />
         </a>
-        <nav className="flex min-w-0 items-center gap-1 overflow-x-auto sm:ml-4">
+        <nav className="flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:ml-4">
           {nav.map((item) => {
             const count = counts?.[item.id as PublicTab]
             return (
