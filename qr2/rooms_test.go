@@ -4,7 +4,17 @@ import (
 	"dwc-server-advanced/common"
 	"reflect"
 	"testing"
+	"time"
 )
+
+func TestStandaloneRoomKeepsCreationTime(t *testing.T) {
+	created := time.Date(2026, time.October, 16, 12, 0, 0, 0, time.UTC)
+	session := &Session{CreatedAt: created, LastKeepAlive: created.Add(time.Hour).Unix(), Data: map[string]string{"gamename": "mariokartwii", "dwc_pid": "1"}}
+	room := roomInfoFromStandaloneSession(session)
+	if !room.CreateTime.Equal(created) {
+		t.Fatalf("room creation time = %v, want %v", room.CreateTime, created)
+	}
+}
 
 func TestMarioKartWiiActiveRacePlayersArePlaying(t *testing.T) {
 	tests := []struct {

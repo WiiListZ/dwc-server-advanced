@@ -46,9 +46,15 @@ QR2 SBCM exploit
 
 The stage 2 payload files and `payload/private-key.pem` must come from the same patcher build. If the key and payload binaries do not match, the client rejects the payload.
 
+The owner can edit the Mario Kart Wii welcome popup under **Panel → Server → Settings → General**. Turning it off omits `wl:motd` from the login response. Build and install a current patcher payload on clients to honor this setting; older payload binaries display their built-in fallback message.
+
 ## Choose One Client Mode
 
 Do not mix these modes for the same client.
+
+The owner can enable **Panel → Server → Settings → Clients → Require payload features for Wii clients** (`requirePayloadFeatures: true`). In this mode a Wii client must present a valid payload version and signature at GPCM login. DNS-only and NoSSL clients cannot connect, even if `allowNoSSLCheatClients` is enabled. Leave it off to accept both payload and compatible non-payload clients. DS logins are unaffected. Install the patch and server payload files before enabling it for your players.
+
+Native login messages can be sent only to online players with payload features. The panel hides the Message action for an online player without them; the API also rejects that request. An offline player's message can still be queued for their next payload login.
 
 ### Mode A: Manually Redirected Or NoSSL Client
 

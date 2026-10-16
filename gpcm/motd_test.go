@@ -23,3 +23,19 @@ func TestEncodeMessageOfTheDayFitsPayloadBuffer(t *testing.T) {
 		t.Fatalf("expected truncated MOTD to end with ellipsis, got %q", text)
 	}
 }
+
+func TestWelcomeMessageSettings(t *testing.T) {
+	config := common.DefaultConfig()
+	config.ServerName = "My server"
+	if text, show := welcomeMessageForConfig(config); !show || text != "Welcome to\nMy server!" {
+		t.Fatalf("unexpected default welcome: %q, %v", text, show)
+	}
+	config.WelcomeMessage = "Custom\nmessage"
+	if text, show := welcomeMessageForConfig(config); !show || text != "Custom\nmessage" {
+		t.Fatalf("unexpected custom welcome: %q, %v", text, show)
+	}
+	config.ShowWelcomeMessage = false
+	if text, show := welcomeMessageForConfig(config); show || text != "" {
+		t.Fatalf("disabled welcome is visible: %q, %v", text, show)
+	}
+}

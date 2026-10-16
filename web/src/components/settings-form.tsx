@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { DEVICE_ID_MODES, LOG_LEVELS, LOG_OUTPUTS, WEBHOOK_EVENTS, type ServerSettings } from "@/lib/server-settings"
 
@@ -117,6 +118,14 @@ export function SettingsFields({ section, value: s, onChange, setup }: FormProps
       return (
         <>
           <TextField id="serverName" label="Server name" description="Shown on the website and in login messages." value={s.serverName} onChange={set("serverName")} />
+          <SwitchField id="showWelcomeMessage" label="Show Wii welcome popup" description="Show a welcome message when a Mario Kart Wii player with the payload connects." checked={s.showWelcomeMessage} onChange={set("showWelcomeMessage")} />
+          {s.showWelcomeMessage && (
+            <Field>
+              <FieldLabel htmlFor="welcomeMessage">Welcome popup text</FieldLabel>
+              <Textarea id="welcomeMessage" maxLength={190} rows={3} value={s.welcomeMessage} onChange={(event) => set("welcomeMessage")(event.target.value)} placeholder={`Welcome to\n${s.serverName || "your server"}!`} />
+              <FieldDescription>Leave blank to use the server name. Line breaks are supported; longer text is shortened to fit the Wii popup.</FieldDescription>
+            </Field>
+          )}
           <SwitchField
             id="profilesEnabled"
             label="Public profiles"
@@ -192,6 +201,7 @@ export function SettingsFields({ section, value: s, onChange, setup }: FormProps
     case "clients":
       return (
         <>
+          <SwitchField id="requirePayloadFeatures" label="Require payload features for Wii clients" description="Reject Wii clients without a verified payload at login. DNS-only and NoSSL clients cannot connect; Nintendo DS clients are unaffected. Leave off to allow both client types." checked={s.requirePayloadFeatures} onChange={set("requirePayloadFeatures")} />
           <SwitchField id="allowNoSSL" label="Allow NoSSL cheat / DNS-patched clients" description="Turn on for local Dolphin setups; see docs/LOCAL_SETUP.md." checked={s.allowNoSSLCheatClients} onChange={set("allowNoSSLCheatClients")} />
           <SwitchField id="allowDolphin" label="Allow default Dolphin keys" description="Lets Dolphin users connect without a dumped NAND." checked={s.allowDefaultDolphinKeys} onChange={set("allowDefaultDolphinKeys")} />
           <SwitchField id="allowNoDevice" label="Allow connecting without a device ID" checked={s.allowConnectWithoutDeviceID} onChange={set("allowConnectWithoutDeviceID")} />

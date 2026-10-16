@@ -2,6 +2,8 @@ export type WebhookSettings = { enabled: boolean; url: string; author: string; e
 
 export type ServerSettings = {
   serverName: string
+  showWelcomeMessage: boolean
+  welcomeMessage: string
   gsAddress: string
   nasAddress: string
   nasPort: string
@@ -29,6 +31,7 @@ export type ServerSettings = {
   hasPassword: boolean
   allowDefaultDolphinKeys: boolean
   allowNoSSLCheatClients: boolean
+  requirePayloadFeatures: boolean
   allowConnectWithoutDeviceID: boolean
   allowMultipleDeviceIDs: string
   logLevel: number

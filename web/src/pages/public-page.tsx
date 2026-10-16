@@ -118,11 +118,11 @@ function TopGames({ stats }: { stats: Stats }) {
   )
 }
 
-const PUBLIC_TABS: PublicTab[] = ["rooms", "players", "bans"]
+const PUBLIC_TABS: PublicTab[] = ["home", "rooms", "players", "bans"]
 
 function tabFromHash(): PublicTab {
   const hash = window.location.hash.replace(/^#/, "") as PublicTab
-  return PUBLIC_TABS.includes(hash) ? hash : "rooms"
+  return PUBLIC_TABS.includes(hash) ? hash : "home"
 }
 
 export function PublicPage() {
@@ -133,6 +133,7 @@ export function PublicPage() {
   const [users, setUsers] = useState<OnlineUser[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [bans, setBans] = useState<BanRecord[]>([])
+  const [myBans, setMyBans] = useState<BanRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [updated, setUpdated] = useState<Date | null>(null)
   const [roomFilter, setRoomFilter] = useState<RoomFilter>("all")
@@ -157,31 +158,41 @@ export function PublicPage() {
 
   const load = useCallback(async () => {
     try {
-      const [s, u, r, b] = await Promise.all([
+      const [s, u, r, b, own] = await Promise.all([
         api<Stats>("/api/stats"),
         api<OnlineUser[]>("/api/public/users"),
         api<Room[]>("/api/public/rooms"),
         api<BanRecord[]>("/api/public/bans"),
+        session?.authenticated ? api<BanRecord[]>("/api/panel/my/bans") : Promise.resolve([]),
       ])
       setStats(s || {})
       setUsers(list(u))
       setRooms(list(r))
       setBans(list(b))
+      setMyBans(list(own))
       setUpdated(new Date())
     } catch (error) {
       toast.error(errorMessage(error))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [session?.authenticated])
 
   useEffect(() => {
     void load()
   }, [load])
   useInterval(() => void load(), settings.autoRefresh ? 10000 : null)
 
-  const visibleRooms = useMemo(() => sortRoomsSelfFirst(rooms.filter((r) => roomFilter === "all" || roomType(r) === roomFilter), account), [rooms, roomFilter, account])
-  const visibleBans = useMemo(() => filterBans(bans, banFilter, banQuery, account), [bans, banFilter, banQuery, account])
+  const visibleRooms = useMemo(() => {
+    const byCreation = rooms.filter((r) => roomFilter === "all" || roomType(r) === roomFilter).sort((a, b) => {
+      const difference = new Date(b.created || 0).getTime() - new Date(a.created || 0).getTime()
+      return difference || a.id.localeCompare(b.id)
+    })
+    return sortRoomsSelfFirst(byCreation, account)
+  }, [rooms, roomFilter, account])
+  const visibleBans = useMemo(() => banFilter === "mine"
+    ? filterBans(myBans, "all", banQuery)
+    : filterBans(bans, banFilter, banQuery, account), [bans, myBans, banFilter, banQuery, account])
   const myRoom = account ? rooms.find((r) => roomContainsAccount(r, account)) : undefined
   const openRoom = rooms.find((r) => r.id === openRoomId)
 
@@ -207,7 +218,7 @@ export function PublicPage() {
   return (
     <div className="min-h-svh bg-background">
       <SiteHeader session={session} page={tab} subtitle="Public status" counts={{ rooms: rooms.length, players: users.length }} />
-      {tab === "rooms" && (
+      {tab === "home" && (
         <section className="border-b">
           <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 lg:grid-cols-[1.4fr_1fr] lg:items-center">
             <div className="grid gap-5">
@@ -318,7 +329,7 @@ export function PublicPage() {
               toolbar={
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <SearchInput value={banQuery} onChange={setBanQuery} placeholder="Name, friend code, reason" />
-                  <BanFilterToggle value={banFilter} onChange={setBanFilter} showMine={!!account?.fc} />
+                  <BanFilterToggle value={banFilter} onChange={setBanFilter} showMine={!!session?.authenticated} />
                 </div>
               }
             />
@@ -350,11 +361,17 @@ export function PublicPage() {
                   return (
                     <Item key={slot} variant={self ? "muted" : "outline"} size="sm">
                       <ItemMedia>
-                        <UserAvatar name={playerName(p)} src={link?.avatar_url} className="size-8" />
+                        {link ? (
+                          <a href={profileHref(link.username)} aria-label={`View ${playerName(p)}'s profile`}>
+                            <UserAvatar name={playerName(p)} src={link.avatar_url} className="size-8" />
+                          </a>
+                        ) : <UserAvatar name={playerName(p)} className="size-8" />}
                       </ItemMedia>
                       <ItemContent className="min-w-0">
                         <ItemTitle className="flex items-center gap-1.5">
-                          <span className="truncate">{playerName(p)}</span>
+                          {link ? (
+                            <a href={profileHref(link.username)} className="truncate underline-offset-4 hover:underline">{playerName(p)}</a>
+                          ) : <span className="truncate">{playerName(p)}</span>}
                           {host && <Crown className="size-3.5 text-warning" aria-label="Host" />}
                           {self && <Badge variant="secondary">You</Badge>}
                           {link && (

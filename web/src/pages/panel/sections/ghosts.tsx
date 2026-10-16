@@ -136,6 +136,17 @@ export function GhostsSection() {
           <CardAction>{top === null && <Spinner />}</CardAction>
         </CardHeader>
         <CardContent className="grid gap-4">
+          <form onSubmit={search} className="grid gap-1.5">
+            <label htmlFor="ghost-player-search" className="text-sm font-medium">Search player times</label>
+            <InputGroup>
+              <InputGroupInput id="ghost-player-search" placeholder="Friend code or profile ID" value={identifier} onChange={(event) => setIdentifier(event.target.value)} />
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton type="submit" disabled={searching || !identifier.trim()}>
+                  {searching ? <Spinner /> : <Search />} Search
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
+          </form>
           <Tabs
             value={String(cup)}
             onValueChange={(v) => {
@@ -195,19 +206,10 @@ export function GhostsSection() {
           <CardTitle className="flex items-center gap-2">
             <Search className="size-4" /> Player times
           </CardTitle>
-          <CardDescription>Every ranking of one profile, with ghost downloads.</CardDescription>
+          <CardDescription>Every ranking of the selected profile, with ghost downloads.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <form onSubmit={search}>
-            <InputGroup>
-              <InputGroupInput placeholder="Friend code or profile ID" value={identifier} onChange={(e) => setIdentifier(e.target.value)} />
-              <InputGroupAddon align="inline-end">
-                <InputGroupButton type="submit" disabled={searching || !identifier.trim()}>
-                  {searching ? <Spinner /> : <Search />} Search
-                </InputGroupButton>
-              </InputGroupAddon>
-            </InputGroup>
-          </form>
+          {!profile && <p className="text-sm text-muted-foreground">Search by friend code or profile ID in the leaderboard to see all player times.</p>}
           {profile && (
             <>
               <div className="flex items-center justify-between">

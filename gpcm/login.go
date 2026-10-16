@@ -270,6 +270,16 @@ func (g *GameSpySession) login(command common.GameSpyCommand) {
 
 	case UnitCodeWii:
 		if !payloadVerExists && !signatureExists {
+			if common.GetConfig().RequirePayloadFeatures {
+				logging.Warn(g.ModuleName, "Rejecting Wii client without verified payload; requirePayloadFeatures is enabled")
+				g.replyError(GPError{
+					ErrorCode:   ErrLogin.ErrorCode,
+					ErrorString: "This server requires the client payload. Install the patch and reconnect.",
+					Fatal:       true,
+					WWFCMessage: WWFCMsgPayloadInvalid,
+				})
+				return
+			}
 			if common.GetConfig().AllowNoSSLCheatClients {
 				logging.Warn(g.ModuleName, "Allowing Wii client without payload authentication due to allowNoSSLCheatClients")
 				g.NeedsExploit = false
@@ -409,7 +419,9 @@ func (g *GameSpySession) login(command common.GameSpyCommand) {
 	if g.GameName == "mariokartwii" {
 		// The payload reads this from lc\2 before exlogin marks PayloadFeatures.
 		// Unpatched clients ignore the extra GameSpy field.
-		otherValues["wl:motd"] = EncodeMessageOfTheDay("Welcome to\n" + common.GetConfig().ServerName + "!")
+		if message, show := welcomeMessageForConfig(common.GetConfig()); show {
+			otherValues["wl:motd"] = EncodeMessageOfTheDay(message)
+		}
 		if !g.PayloadFeatures {
 			if pending, err := db.HasPendingLoginMessage(g.User.ProfileId); err != nil {
 				logging.Error(g.ModuleName, "Failed to check pending login message:", err)

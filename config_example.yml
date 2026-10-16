@@ -16,6 +16,8 @@ payloadServerAddress: 127.0.0.1:29997
 
 # Public service name shown on the web panel and login messages.
 serverName: WFC Server
+showWelcomeMessage: true # Show the Mario Kart Wii payload welcome popup.
+welcomeMessage: "" # Blank uses "Welcome to\n<serverName>!"; supports line breaks.
 
 # Local RPC channels for internal server communication.
 # Do not expose these to a public network or the internet.
@@ -44,6 +46,7 @@ keyPathDS: nas-key.pem
 # Client policy.
 allowDefaultDolphinKeys: true
 allowNoSSLCheatClients: false
+requirePayloadFeatures: false # When true, Wii clients must authenticate with the payload at login.
 
 # Database credentials.
 username: username

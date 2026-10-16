@@ -1,11 +1,11 @@
-import { ChevronRight, Globe, Lock } from "lucide-react"
+import { ChevronRight, Clock3, Globe, Lock } from "lucide-react"
 
 import { StatusBadge, type Tone } from "@/components/status-badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import type { Account, Room } from "@/lib/api"
-import { initials, playerName, roomContainsAccount, roomStateLabel, roomType, sortedPlayers } from "@/lib/format"
+import { fmtOptionalDate, initials, playerName, roomContainsAccount, roomStateLabel, roomType, sortedPlayers } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export const stateTone = (state?: string): Tone => (state === "playing" ? "success" : state === "matchmaking" ? "info" : "neutral")
@@ -23,11 +23,11 @@ export function RoomTileView({ room, account, onOpen }: { room: Room; account?: 
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onOpen()}
       className={cn(
         "group cursor-pointer gap-3 p-4 transition-colors hover:border-foreground/20 hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        mine && "ring-2 ring-primary/50",
+        mine && "border-primary bg-primary/5 ring-2 ring-primary/50",
       )}
     >
       <div className="flex items-start gap-3">
-        <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", isPrivate ? "bg-warning/10 text-warning" : "bg-chart-1/10 text-chart-1")}>
+        <div className={cn("flex size-9 shrink-0 items-center justify-center", isPrivate ? "text-warning" : "text-chart-1")}>
           {isPrivate ? <Lock className="size-4" /> : <Globe className="size-4" />}
         </div>
         <div className="grid min-w-0 flex-1 gap-0.5">
@@ -39,9 +39,13 @@ export function RoomTileView({ room, account, onOpen }: { room: Room; account?: 
         <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
+        <Badge variant="outline">{isPrivate ? "Private" : "Public"}</Badge>
         <StatusBadge tone={stateTone(room.state)}>{roomStateLabel(room.state)}</StatusBadge>
         {room.race?.num ? <Badge variant="outline">Race {room.race.num}</Badge> : null}
         {room.rk && <Badge variant="outline">{room.rk}</Badge>}
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Clock3 className="size-3.5" /> Created {fmtOptionalDate(room.created)}
       </div>
       <div className="flex items-center justify-between">
         <div className="flex -space-x-2">

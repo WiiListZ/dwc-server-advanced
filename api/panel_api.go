@@ -462,6 +462,55 @@ func HandlePublicBans(w http.ResponseWriter, r *http.Request) {
 	writeBans(w, false)
 }
 
+func HandlePanelMyBans(w http.ResponseWriter, r *http.Request) {
+	account, ok := requirePanelAccount(w, r)
+	if !ok {
+		return
+	}
+	if !allowMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	bans, err := db.ListBans(false)
+	if err != nil {
+		writePanelError(w, http.StatusInternalServerError, "failed to list bans")
+		return
+	}
+	consoles, err := db.ListConsoleSummariesForAccount(account.ID)
+	if err != nil {
+		writePanelError(w, http.StatusInternalServerError, "failed to list linked consoles")
+		return
+	}
+	profileIDs := map[uint32]bool{}
+	friendCodes := map[string]bool{}
+	consoleIDs := map[int]bool{}
+	for _, id := range panelAccountProfileIDs(account) {
+		profileIDs[id] = true
+	}
+	if account.FriendCode != "" {
+		friendCodes[account.FriendCode] = true
+	}
+	for _, profile := range account.LinkedProfiles {
+		if profile.FriendCode != "" {
+			friendCodes[profile.FriendCode] = true
+		}
+	}
+	for _, console := range consoles {
+		consoleIDs[console.ID] = true
+	}
+
+	mine := []database.BanRecord{}
+	for _, ban := range bans {
+		if !profileIDs[ban.ProfileID] && !friendCodes[ban.FriendCode] && !consoleIDs[ban.ConsoleID] {
+			continue
+		}
+		ban.ProfileID = 0
+		ban.TOS = false
+		mine = append(mine, ban)
+	}
+	writePanelJSON(w, http.StatusOK, mine)
+}
+
 func HandlePanelRooms(w http.ResponseWriter, r *http.Request) {
 	account, ok := requirePanelAccount(w, r)
 	if !ok {
@@ -617,6 +666,10 @@ func HandlePanelProfileLinkStart(w http.ResponseWriter, r *http.Request) {
 		writePanelError(w, http.StatusConflict, "profile is already linked to another account")
 		return
 	}
+	if target := gpcm.GetLoginMessageTargetInfo(profileID); target.Online && !target.PayloadFeatures {
+		writePanelError(w, http.StatusConflict, "this online player has no payload features; the link code cannot be shown")
+		return
+	}
 
 	code, err := newProfileLinkCode()
 	if err != nil {
@@ -648,8 +701,6 @@ func HandlePanelProfileLinkStart(w http.ResponseWriter, r *http.Request) {
 		notice = "Link code sent to the online payload client."
 	} else if targetInfo.Online && targetInfo.PayloadFeatures {
 		notice = "Link code queued. It will show once on the next payload login."
-	} else if targetInfo.Online {
-		notice = "Link code queued, but this online target has no payload features."
 	}
 
 	logging.Event("profile_link_requested", map[string]any{
@@ -1955,6 +2006,10 @@ func HandlePanelLoginMessage(w http.ResponseWriter, r *http.Request) {
 		writePanelError(w, http.StatusBadRequest, "message too long")
 		return
 	}
+	if target := gpcm.GetLoginMessageTargetInfo(profileID); target.Online && !target.PayloadFeatures {
+		writePanelError(w, http.StatusConflict, "this online player has no payload features; a login message cannot be shown")
+		return
+	}
 
 	loginMessage, err := db.CreatePanelLoginMessage(profileID, message, account.Username)
 	if err != nil {
@@ -1973,8 +2028,6 @@ func HandlePanelLoginMessage(w http.ResponseWriter, r *http.Request) {
 		notice = "Login message sent to the online payload client."
 	} else if targetInfo.Online && targetInfo.PayloadFeatures {
 		notice = "Queued. It will show once on the next payload login."
-	} else if targetInfo.Online {
-		notice = "Queued, but this online target has no payload features. Vanilla Mario Kart Wii does not display arbitrary native MOTD text."
 	}
 
 	logging.Event("login_message_created", map[string]any{

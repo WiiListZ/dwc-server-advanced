@@ -1,4 +1,4 @@
-import { CircleAlert, CircleUser, DoorOpen, LogIn, LogOut, Settings, Shield, UserRound, UserX, Users } from "lucide-react"
+import { CircleAlert, CircleUser, DoorOpen, House, LogIn, LogOut, Settings, Shield, UserRound, UserX, Users } from "lucide-react"
 
 import { Brand, BrandMark } from "@/components/brand"
 import { ModeToggle } from "@/components/mode-toggle"
@@ -75,7 +75,7 @@ export function AccountMenu({ session, onLogout }: { session: Session | null; on
   )
 }
 
-export type PublicTab = "rooms" | "players" | "bans"
+export type PublicTab = "home" | "rooms" | "players" | "bans"
 type Page = PublicTab | "errors" | "settings" | "profile"
 
 export function SiteHeader({
@@ -90,6 +90,7 @@ export function SiteHeader({
   counts?: Partial<Record<PublicTab, number>>
 }) {
   const nav = [
+    { id: "home", href: "/#home", label: "Home", icon: House },
     { id: "rooms", href: "/#rooms", label: "Rooms", icon: DoorOpen },
     { id: "players", href: "/#players", label: "Players", icon: Users },
     { id: "bans", href: "/#bans", label: "Ban list", icon: UserX },
@@ -104,24 +105,24 @@ export function SiteHeader({
         <a href="/" className="sm:hidden" aria-label="Home">
           <BrandMark />
         </a>
-        <nav className="flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:ml-4">
+        <nav className="flex min-w-0 flex-1 items-center gap-1 sm:ml-4">
           {nav.map((item) => {
             const count = counts?.[item.id as PublicTab]
             return (
               <Button key={item.id} asChild variant={page === item.id ? "secondary" : "ghost"} size="sm">
-                <a href={item.href} aria-current={page === item.id ? "page" : undefined}>
+                <a href={item.href} aria-label={item.label} aria-current={page === item.id ? "page" : undefined}>
                   <item.icon data-icon="inline-start" />
-                  <span className="hidden md:inline">{item.label}</span>
-                  {count !== undefined && <span className="text-xs text-muted-foreground tabular-nums">{count}</span>}
+                  <span className="hidden lg:inline">{item.label}</span>
+                  {count !== undefined && <span className="hidden text-xs text-muted-foreground tabular-nums lg:inline">{count}</span>}
                 </a>
               </Button>
             )
           })}
           {session?.authenticated && (
-            <Button asChild variant={page === "settings" ? "secondary" : "ghost"} size="sm">
-              <a href="/settings">
+            <Button asChild variant={page === "settings" ? "secondary" : "ghost"} size="sm" className="hidden sm:inline-flex">
+              <a href="/settings" aria-label="Account">
                 <UserRound data-icon="inline-start" />
-                <span className="hidden md:inline">Account</span>
+                <span className="hidden lg:inline">Account</span>
               </a>
             </Button>
           )}

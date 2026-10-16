@@ -105,10 +105,14 @@ func roomInfoFromStandaloneSession(session *Session) RoomInfo {
 		joinIndex = "0"
 	}
 
+	created := session.CreatedAt
+	if created.IsZero() {
+		created = time.Unix(session.LastKeepAlive, 0).UTC()
+	}
 	room := RoomInfo{
 		ID:            standaloneRoomID(session),
 		GameName:      session.Data["gamename"],
-		CreateTime:    time.Unix(session.LastKeepAlive, 0).UTC(),
+		CreateTime:    created,
 		MatchType:     matchTypeLabel(session.Data["dwc_mtype"]),
 		State:         "matchmaking",
 		HostProfileID: session.Data["dwc_pid"],

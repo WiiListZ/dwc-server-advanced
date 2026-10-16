@@ -17,7 +17,9 @@ import (
 // and by the panel's server settings. Secrets are never sent back: the
 // database password and API secret are write-only.
 type serverSettings struct {
-	ServerName string `json:"serverName"`
+	ServerName         string `json:"serverName"`
+	ShowWelcomeMessage bool   `json:"showWelcomeMessage"`
+	WelcomeMessage     string `json:"welcomeMessage"`
 
 	GSAddress            string `json:"gsAddress"`
 	NASAddress           string `json:"nasAddress"`
@@ -50,6 +52,7 @@ type serverSettings struct {
 
 	AllowDefaultDolphinKeys     bool   `json:"allowDefaultDolphinKeys"`
 	AllowNoSSLCheatClients      bool   `json:"allowNoSSLCheatClients"`
+	RequirePayloadFeatures      bool   `json:"requirePayloadFeatures"`
 	AllowConnectWithoutDeviceID bool   `json:"allowConnectWithoutDeviceID"`
 	AllowMultipleDeviceIDs      string `json:"allowMultipleDeviceIDs"`
 
@@ -90,6 +93,8 @@ func settingsFromConfig(c common.Config) serverSettings {
 
 	s := serverSettings{
 		ServerName:                  c.ServerName,
+		ShowWelcomeMessage:          c.ShowWelcomeMessage,
+		WelcomeMessage:              c.WelcomeMessage,
 		GSAddress:                   deref(c.GameSpyAddress),
 		NASAddress:                  deref(c.NASAddress),
 		NASPort:                     c.NASPort,
@@ -116,6 +121,7 @@ func settingsFromConfig(c common.Config) serverSettings {
 		HasPassword:                 c.Password != "",
 		AllowDefaultDolphinKeys:     c.AllowDefaultDolphinKeys,
 		AllowNoSSLCheatClients:      c.AllowNoSSLCheatClients,
+		RequirePayloadFeatures:      c.RequirePayloadFeatures,
 		AllowConnectWithoutDeviceID: c.AllowConnectWithoutDeviceID,
 		AllowMultipleDeviceIDs:      c.AllowMultipleDeviceIDs,
 		LogOutput:                   c.LogOutput,
@@ -155,6 +161,8 @@ func applySettings(base common.Config, s serverSettings) (common.Config, error) 
 	if c.ServerName == "" {
 		return c, fmt.Errorf("server name required")
 	}
+	c.ShowWelcomeMessage = s.ShowWelcomeMessage
+	c.WelcomeMessage = trim(s.WelcomeMessage)
 
 	c.GameSpyAddress = str(s.GSAddress)
 	c.NASAddress = str(s.NASAddress)
@@ -203,6 +211,7 @@ func applySettings(base common.Config, s serverSettings) (common.Config, error) 
 
 	c.AllowDefaultDolphinKeys = s.AllowDefaultDolphinKeys
 	c.AllowNoSSLCheatClients = s.AllowNoSSLCheatClients
+	c.RequirePayloadFeatures = s.RequirePayloadFeatures
 	c.AllowConnectWithoutDeviceID = s.AllowConnectWithoutDeviceID
 	if !contains(deviceIDModes, s.AllowMultipleDeviceIDs) {
 		return c, fmt.Errorf("multiple device IDs must be one of %s", strings.Join(deviceIDModes, ", "))
@@ -276,8 +285,10 @@ func contains(list []string, v string) bool {
 // liveSettings take effect without a restart because they are read from the
 // config on every use.
 var liveSettings = map[string]bool{
-	"ServerName": true, "KeepRevokedBans": true, "BanHistoryDays": true, "Profiles": true,
+	"ServerName": true, "ShowWelcomeMessage": true, "WelcomeMessage": true,
+	"KeepRevokedBans": true, "BanHistoryDays": true, "Profiles": true,
 	"AllowDefaultDolphinKeys": true, "AllowMultipleDeviceIDs": true, "AllowConnectWithoutDeviceID": true,
+	"AllowNoSSLCheatClients": true, "RequirePayloadFeatures": true,
 }
 
 func restartRequired(before, after common.Config) bool {

@@ -101,6 +101,7 @@ func RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/api/panel/console/me", HandlePanelConsoleSummary)
 	mux.HandleFunc("/api/panel/console/primary", HandlePanelConsolePrimary)
 	mux.HandleFunc("/api/panel/my/rooms", HandlePanelMyRooms)
+	mux.HandleFunc("/api/panel/my/bans", HandlePanelMyBans)
 	mux.HandleFunc("/api/panel/my/kick", HandlePanelMyRoomKick)
 	mux.HandleFunc("/api/panel/my/report", HandlePanelMyRoomReport)
 	mux.HandleFunc("/api/panel/my/open-host", HandlePanelMyOpenHost)

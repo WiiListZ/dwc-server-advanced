@@ -41,6 +41,21 @@ func TestSettingsRoundTripNeedsNoRestart(t *testing.T) {
 		t.Fatal("renaming the server must apply without a restart")
 	}
 
+	welcome := settingsFromConfig(cfg)
+	welcome.ShowWelcomeMessage = false
+	welcome.WelcomeMessage = "Custom welcome"
+	welcome.RequirePayloadFeatures = true
+	next, err = applySettings(cfg, welcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.ShowWelcomeMessage || next.WelcomeMessage != "Custom welcome" || !next.RequirePayloadFeatures {
+		t.Fatal("welcome or payload policy did not round-trip")
+	}
+	if restartRequired(cfg, next) {
+		t.Fatal("live client settings must apply without a restart")
+	}
+
 	moved := settingsFromConfig(cfg)
 	moved.NASPort = "8080"
 	next, err = applySettings(cfg, moved)

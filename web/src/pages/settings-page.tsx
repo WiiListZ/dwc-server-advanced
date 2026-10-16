@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Gamepad2, Link2, Monitor, ShieldCheck, SlidersHorizontal, Unlink, UserRound } from "lucide-react"
+import { Check, ChevronDown, Gamepad2, Link2, Monitor, Pencil, ShieldCheck, SlidersHorizontal, Unlink, UserRound } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -239,17 +240,23 @@ function consoleMeta(c: ConsoleSummary) {
 function ConsoleRow({ data, onChange, onUnlinked }: { data: ConsoleSummary; onChange: (c: ConsoleSummary[]) => void; onUnlinked: (a?: Account) => void }) {
   const { confirm } = useConfirm()
   const [name, setName] = useState(data.placeholder || "")
+  const [renaming, setRenaming] = useState(false)
+  const [savingName, setSavingName] = useState(false)
   const [open, setOpen] = useState(true)
   const profiles = list(data.profiles)
   const primary = profiles.find((p) => p.primary)
 
   async function saveName() {
+    setSavingName(true)
     try {
       const response = await api<{ consoles: ConsoleSummary[] }>("/api/panel/console/me", { method: "PATCH", body: { console_id: data.id, placeholder: name.trim() } })
       toast.success("Console nickname saved")
       onChange(list(response.consoles))
+      setRenaming(false)
     } catch (error) {
       toast.error(errorMessage(error))
+    } finally {
+      setSavingName(false)
     }
   }
 
@@ -291,15 +298,32 @@ function ConsoleRow({ data, onChange, onUnlinked }: { data: ConsoleSummary; onCh
           <span className="truncate font-mono text-xs text-muted-foreground">{consoleMeta(data)}</span>
         </div>
         <div className="flex items-center gap-2">
-          <Input className="h-8 w-44" maxLength={80} placeholder="Console nickname" value={name} onChange={(e) => setName(e.target.value)} />
-          <Button size="sm" variant="secondary" onClick={() => void saveName()}>
-            Save
+          <Button size="icon-sm" variant="outline" aria-label="Rename console" title="Rename console" onClick={() => { setName(data.placeholder || ""); setRenaming(true) }}>
+            <Pencil />
           </Button>
           <Button size="sm" variant="destructive" onClick={() => void unlink()}>
             Unlink
           </Button>
         </div>
       </div>
+      <Dialog open={renaming} onOpenChange={setRenaming}>
+        <DialogContent>
+          <form className="grid gap-5" onSubmit={(event) => { event.preventDefault(); void saveName() }}>
+            <DialogHeader>
+              <DialogTitle>Rename console</DialogTitle>
+              <DialogDescription>Choose a nickname for {data.placeholder || `console ${data.id}`}.</DialogDescription>
+            </DialogHeader>
+            <Field>
+              <FieldLabel htmlFor={`console-name-${data.id}`}>Console nickname</FieldLabel>
+              <Input id={`console-name-${data.id}`} maxLength={80} placeholder={`Console ${data.id}`} value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenaming(false)}>Cancel</Button>
+              <Button type="submit" disabled={savingName}>{savingName ? <Spinner /> : null} Save</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <CollapsibleContent>
         <Separator />
         <div className="p-3">

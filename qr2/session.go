@@ -30,6 +30,7 @@ type Session struct {
 	Authenticated   bool
 	login           *LoginInfo
 	ExploitReceived bool
+	CreatedAt       time.Time
 	LastKeepAlive   int64
 	Endianness      byte // Some fields depend on the client's endianness
 	Data            map[string]string
@@ -146,6 +147,7 @@ func setSessionData(moduleName string, addr net.Addr, sessionId uint32, payload 
 			Addr:            *addr.(*net.UDPAddr),
 			Challenge:       "",
 			Authenticated:   false,
+			CreatedAt:       time.Now().UTC(),
 			LastKeepAlive:   time.Now().UTC().Unix(),
 			Endianness:      ClientNoEndian,
 			Data:            payload,

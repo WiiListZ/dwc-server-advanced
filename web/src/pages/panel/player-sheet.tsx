@@ -140,7 +140,7 @@ export function PlayerSheet() {
 
   return (
     <Dialog open={!!player} onOpenChange={(open) => !open && closePlayer()}>
-      <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl" onOpenAutoFocus={(event) => { event.preventDefault(); (event.currentTarget as HTMLElement).focus() }}>
         {resolved && (
           <>
             <DialogHeader className="gap-3 border-b p-6 pr-12">
@@ -181,7 +181,7 @@ export function PlayerSheet() {
                     <UserMinus data-icon="inline-start" /> Kick
                   </Button>
                 )}
-                {can("message") && (
+                {can("message") && (!resolved.online || resolved.online.payload_features) && (
                   <Button size="sm" variant="outline" onClick={() => openAction("message", ref)}>
                     <MessageSquare data-icon="inline-start" /> Message
                   </Button>

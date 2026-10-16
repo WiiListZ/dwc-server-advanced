@@ -52,8 +52,11 @@ type Config struct {
 	AllowMultipleDeviceIDs      string `xml:"allowMultipleDeviceIDs" yaml:"allowMultipleDeviceIDs"`
 	AllowConnectWithoutDeviceID bool   `xml:"allowConnectWithoutDeviceID" yaml:"allowConnectWithoutDeviceID"`
 	AllowNoSSLCheatClients      bool   `xml:"allowNoSSLCheatClients" yaml:"allowNoSSLCheatClients"`
+	RequirePayloadFeatures      bool   `xml:"requirePayloadFeatures" yaml:"requirePayloadFeatures"`
 
-	ServerName string `xml:"serverName,omitempty" yaml:"serverName,omitempty"`
+	ServerName         string `xml:"serverName,omitempty" yaml:"serverName,omitempty"`
+	ShowWelcomeMessage bool   `xml:"showWelcomeMessage" yaml:"showWelcomeMessage"`
+	WelcomeMessage     string `xml:"welcomeMessage,omitempty" yaml:"welcomeMessage,omitempty"`
 
 	// KeepRevokedBans keeps lifted bans in the history marked as revoked.
 	// When false, unbanning deletes the lifted ban from the database.
@@ -149,6 +152,7 @@ func parseConfig(data []byte, path string) (Config, error) {
 		AllowMultipleDeviceIDs:      "never",
 		AllowConnectWithoutDeviceID: false,
 		ServerName:                  "WFC Server",
+		ShowWelcomeMessage:          true,
 		KeepRevokedBans:             true,
 		BanHistoryDays:              30,
 		Profiles:                    ProfilesConfig{Enabled: true},

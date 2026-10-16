@@ -252,6 +252,7 @@ The server looks for `$WWFC_CONFIG`, then `config.yml`, `config.yaml` and finall
 | Key | Purpose |
 |---|---|
 | `serverName` | Name shown on the website and in Mario Kart Wii's payload welcome message |
+| `showWelcomeMessage`, `welcomeMessage` | Show or hide the Mario Kart Wii payload welcome popup and set its text. An empty text uses `Welcome to <serverName>!`. Change these in **Panel → Server → Settings → General**. Existing payload installations must be rebuilt with a patcher that supports hiding the popup. |
 | `gsAddress` | Bind address of the GameSpy services |
 | `nasAddress`, `nasPort` | Bind address and port of NAS HTTP and the website |
 | `nasAddressHttps`, `nasPortHttps`, `enableHttps` | HTTPS listener |
@@ -260,6 +261,7 @@ The server looks for `$WWFC_CONFIG`, then `config.yml`, `config.yaml` and finall
 | `enableHttpsExploitDS`, `certDerPathDS`, `wiiCertDerPathDS`, `keyPathDS` | DS SSL exploit chain |
 | `payloadServerAddress` | External payload server; empty uses the built-in one |
 | `allowDefaultDolphinKeys`, `allowNoSSLCheatClients`, `allowConnectWithoutDeviceID`, `allowMultipleDeviceIDs` | Client policy |
+| `requirePayloadFeatures` | Require a verified payload at Wii GPCM login (default `false`). DNS-only and NoSSL Wii clients are rejected when enabled; DS clients are unaffected. This takes priority over `allowNoSSLCheatClients`. |
 | `databaseAddress`, `databaseName`, `username`, `password` | PostgreSQL connection |
 | `logLevel`, `logOutput` | Logging (`0`–`4`; `None`, `StdOut`, `StdOutAndFile`) |
 | `apiSecret` | Secret for `/api/ban`, `/api/kick`, `/api/unban` |
@@ -402,7 +404,7 @@ Consoles and emulators only reach this server once their games are patched. The 
 
 The fork adds a feature this server uses: **End race** in the panel sends a QR2 command that patched Mario Kart Wii clients obey, ending the race without breaking up the room (see [Ending a race](#ending-a-race)).
 
-For Mario Kart Wii clients with the payload, the default welcome popup uses `serverName` from `config.yml`. Change the name in **Panel → Server → Settings → General** and restart the server to update the popup.
+For Mario Kart Wii clients with the payload, the default welcome popup uses `serverName` from `config.yml`. In **Panel → Server → Settings → General**, turn the popup off or write custom multiline text. These settings apply to new logins without restarting the server. To hide the popup, rebuild and reinstall the client payload with a patcher version that understands the missing welcome field; older payloads show their built-in default text.
 
 **Build** (Python 3.11+ with `cryptography`, devkitPPC, and your server's domain):
 

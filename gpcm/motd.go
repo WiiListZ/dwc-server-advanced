@@ -8,6 +8,16 @@ import (
 
 const maxMessageOfTheDayUTF16Units = 190
 
+func welcomeMessageForConfig(config common.Config) (string, bool) {
+	if !config.ShowWelcomeMessage {
+		return "", false
+	}
+	if config.WelcomeMessage != "" {
+		return config.WelcomeMessage, true
+	}
+	return "Welcome to\n" + config.ServerName + "!", true
+}
+
 func truncateMessageOfTheDay(motd string) string {
 	if len(utf16.Encode([]rune(motd))) <= maxMessageOfTheDayUTF16Units {
 		return motd
